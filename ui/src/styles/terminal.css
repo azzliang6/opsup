@@ -1,0 +1,34 @@
+.terminal-container {
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  background: var(--bg-terminal, #1a1a2e);
+}
+
+.terminal-container .xterm {
+  height: 100%;
+}
+
+.terminal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.45));
+  font-size: 14px;
+}
+
+.terminal-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #ff4d4f;
+  font-size: 14px;
+  padding: 20px;
+  text-align: center;
+}
+
+.mobile-shortcut-bar::-webkit-scrollbar {
+  display: none;
+}

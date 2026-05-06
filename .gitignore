@@ -1,0 +1,26 @@
+# Binaries
+opsup
+opsup-arm64
+*.exe
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+ui/node_modules/
+ui/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
