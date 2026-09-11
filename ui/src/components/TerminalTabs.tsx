@@ -1,8 +1,6 @@
 import { useState, useCallback, lazy, Suspense, useEffect, useRef } from 'react'
-import Empty from 'antd/es/empty'
 import Spin from 'antd/es/spin'
 import { CloseOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
-import { useTheme } from '../contexts/ThemeContext'
 import type { TabInfo } from '../pages/MainPage'
 import type { ConnectionStatus } from '../hooks/useTerminalConnection'
 
@@ -11,16 +9,9 @@ const FONT_KEY = 'opsup_font_size'
 const MIN_SIZE = 10
 const MAX_SIZE = 28
 const labels = { connecting: '正在连接', connected: '已连接', error: '连接断开或失败' }
-
-interface Props {
-  tabs: TabInfo[]
-  activeKey: string
-  onSelect: (key: string) => void
-  onClose: (key: string) => void
-}
+interface Props { tabs: TabInfo[]; activeKey: string; onSelect: (key: string) => void; onClose: (key: string) => void }
 
 export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Props) {
-  const { colors } = useTheme()
   const [fontSize, setFontSize] = useState(() => {
     const saved = Number(localStorage.getItem(FONT_KEY))
     return saved >= MIN_SIZE && saved <= MAX_SIZE ? saved : 14
@@ -43,10 +34,7 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
       return next
     })
   }, [])
-  const focusTab = (key: string) => {
-    onSelect(key)
-    document.getElementById(`tab-${key}`)?.focus()
-  }
+  const focusTab = (key: string) => { onSelect(key); document.getElementById(`tab-${key}`)?.focus() }
   const closeTab = (key: string) => {
     const index = tabs.findIndex(tab => tab.key === key)
     const next = tabs[index + 1] || tabs[index - 1]
@@ -54,18 +42,28 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
     if (next) focusTab(next.key)
   }
 
-  if (!tabs.length) return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: colors.textTertiary }}>从服务器列表选择一个服务器开始连接</span>} /></div>
+  if (!tabs.length) return (
+    <section className="workspace-empty" aria-label="终端工作区">
+      <header className="empty-workspace-header"><span>终端工作区</span><span>SSH / SFTP</span></header>
+      <div className="workspace-empty-content">
+        <div className="empty-terminal-mark" aria-hidden="true">&gt;_</div>
+        <h2>开始一个终端会话</h2>
+        <p>从服务器列表选择主机，在这里开始连接。<br />切换标签时，会话会保留在原处。</p>
+        <div className="empty-features"><span>多标签终端</span><span>文件管理</span><span>快捷键支持</span></div>
+      </div>
+    </section>
+  )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', background: colors.bgTabBar, borderBottom: `1px solid ${colors.borderSubtle}`, padding: '0 4px', minHeight: 38, flexShrink: 0 }}>
-        <div role="tablist" aria-label="SSH 终端" style={{ display: 'flex', flex: 1, minWidth: 0, overflowX: 'auto' }}>
+    <div className="terminal-workspace">
+      <div className="terminal-tab-bar">
+        <div className="terminal-tab-list" role="tablist" aria-label="SSH 终端">
           {tabs.map((tab, index) => {
             const status = statuses[tab.key] || 'connecting'
-            return <div key={tab.key} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, background: tab.key === activeKey ? colors.bgBase : 'transparent', borderBottom: tab.key === activeKey ? `2px solid ${colors.colorPrimary}` : '2px solid transparent', borderRadius: '6px 6px 0 0' }}>
-              <button className="plain-button" role="tab" id={`tab-${tab.key}`} aria-controls={`panel-${tab.key}`} aria-selected={tab.key === activeKey} tabIndex={tab.key === activeKey ? 0 : -1}
-                onClick={() => onSelect(tab.key)}
-                onKeyDown={event => {
+            return <div className="terminal-tab-item" key={tab.key} data-active={tab.key === activeKey}>
+              <button className="plain-button terminal-tab-label" role="tab" id={`tab-${tab.key}`} aria-controls={`panel-${tab.key}`} aria-selected={tab.key === activeKey} tabIndex={tab.key === activeKey ? 0 : -1}
+                title={`${tab.server.name} · ${tab.server.username}@${tab.server.host}:${tab.server.port}`}
+                onClick={() => onSelect(tab.key)} onKeyDown={event => {
                   let target = index
                   if (event.key === 'ArrowRight') target = (index + 1) % tabs.length
                   else if (event.key === 'ArrowLeft') target = (index - 1 + tabs.length) % tabs.length
@@ -75,29 +73,27 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
                   else return
                   event.preventDefault()
                   focusTab(tabs[target].key)
-                }}
-                style={{ padding: '8px', fontSize: 13, whiteSpace: 'nowrap', color: tab.key === activeKey ? colors.textPrimary : colors.textSecondary }}>
-                <span aria-label={labels[status]} title={labels[status]} style={{ color: status === 'connected' ? '#52c41a' : status === 'error' ? '#ff7875' : '#faad14', marginRight: 6 }}>&bull;</span>{tab.server.name}
+                }}>
+                <span className="connection-dot" role="img" data-status={status} aria-label={labels[status]} title={labels[status]} />
+                <span className="tab-name">{tab.server.name}</span>
               </button>
-              <button className="plain-button" aria-label={`关闭 ${tab.server.name}`} onClick={() => closeTab(tab.key)} style={{ color: colors.textTertiary, padding: 8 }}><CloseOutlined style={{ fontSize: 10 }} /></button>
+              <button className="plain-button tab-close" aria-label={`关闭 ${tab.server.name}`} onClick={() => closeTab(tab.key)}><CloseOutlined /></button>
             </div>
           })}
         </div>
-        <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginLeft: 4, flexShrink: 0, color: colors.textSecondary }}>
-          <button className="plain-button" aria-label="缩小字体" disabled={fontSize <= MIN_SIZE} onClick={() => changeFontSize(-1)} style={{ padding: 6 }}><MinusOutlined /></button>
-          <span style={{ fontSize: 12 }}>{fontSize}px</span>
-          <button className="plain-button" aria-label="放大字体" disabled={fontSize >= MAX_SIZE} onClick={() => changeFontSize(1)} style={{ padding: 6 }}><PlusOutlined /></button>
+        <div className="font-controls" role="group" aria-label="终端字号">
+          <button className="plain-button" aria-label="缩小字体" disabled={fontSize <= MIN_SIZE} onClick={() => changeFontSize(-1)}><MinusOutlined /></button>
+          <span>{fontSize}px</span>
+          <button className="plain-button" aria-label="放大字体" disabled={fontSize >= MAX_SIZE} onClick={() => changeFontSize(1)}><PlusOutlined /></button>
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
-        {tabs.map(tab => (
-          <div key={tab.key} role="tabpanel" id={`panel-${tab.key}`} aria-labelledby={`tab-${tab.key}`} hidden={tab.key !== activeKey} style={{ position: 'absolute', inset: 0 }}>
-            <Suspense fallback={<div role="status"><Spin size="small" /> 加载终端…</div>}>
-              <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />
-            </Suspense>
-          </div>
-        ))}
-      </div>
+      <div className="terminal-panels">{tabs.map(tab => (
+        <div className="terminal-panel" key={tab.key} role="tabpanel" id={`panel-${tab.key}`} aria-labelledby={`tab-${tab.key}`} hidden={tab.key !== activeKey}>
+          <Suspense fallback={<div className="panel-loading" role="status"><Spin size="small" />加载终端…</div>}>
+            <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />
+          </Suspense>
+        </div>
+      ))}</div>
     </div>
   )
 }

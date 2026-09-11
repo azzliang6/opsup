@@ -225,72 +225,31 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
   ]
 
   return (
-    <Modal
-      title={`文件管理 - ${serverName}`}
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={720}
-      styles={{ body: { padding: '12px 0 0' } }}
-    >
-      {/* Path bar */}
-      <div style={{ padding: '0 16px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <Tooltip title="根目录">
-          <Button aria-label="根目录" type="text" size="small" icon={<HomeOutlined />} onClick={() => navigateTo('/')} />
-        </Tooltip>
-        <Input
-          aria-label="目录路径"
-          value={pathInput}
-          onChange={(e) => setPathInput(e.target.value)}
-          onPressEnter={handleGoPath}
-          style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
-        />
-        <Button size="small" icon={<ReloadOutlined />} onClick={() => loadFiles(currentPath)}>
-          刷新
-        </Button>
+    <Modal className="opsup-modal file-manager" title={`文件管理 · ${serverName}`} open={open} onCancel={onClose} footer={null} width={760}
+      styles={{ body: { maxHeight: 'calc(100dvh - 180px)', overflowY: 'auto' } }}>
+      <div className="file-toolbar">
+        <Tooltip title="根目录"><Button aria-label="根目录" type="text" size="small" icon={<HomeOutlined />} onClick={() => navigateTo('/')} /></Tooltip>
+        <Input aria-label="目录路径" value={pathInput} onChange={event => setPathInput(event.target.value)} onPressEnter={handleGoPath} style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+        <Button size="small" icon={<ReloadOutlined />} onClick={() => loadFiles(currentPath)}>刷新</Button>
       </div>
-
-      {/* Breadcrumb */}
-      <div style={{ padding: '0 16px 8px', fontSize: 12, color: colors.textTertiary, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+      <nav className="file-breadcrumbs" aria-label="当前目录" style={{ color: colors.textTertiary, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         <button className="plain-button" aria-label="根目录路径" style={{ color: colors.colorPrimary }} onClick={() => navigateTo('/')}>/</button>
         {pathParts.map((part, i) => {
           const fullPath = '/' + pathParts.slice(0, i + 1).join('/')
-          return (
-            <span key={fullPath} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <span>/</span>
-              <button className="plain-button" style={{ color: colors.colorPrimary }} onClick={() => navigateTo(fullPath)}>
-                {part}
-              </button>
-            </span>
-          )
+          return <span key={fullPath} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <span>/</span>}
+            <button className="plain-button" style={{ color: colors.colorPrimary }} onClick={() => navigateTo(fullPath)}>{part}</button>
+          </span>
         })}
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: 8 }}>
-        <Button disabled={!ready} size="small" icon={<UploadOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>
-          上传
-        </Button>
-        <Button disabled={!ready} size="small" icon={<FolderAddOutlined />} onClick={handleMkdir}>
-          新建文件夹
-        </Button>
+      </nav>
+      <div className="file-actions">
+        <Button disabled={!ready} size="small" icon={<UploadOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>上传</Button>
+        <Button disabled={!ready} size="small" icon={<FolderAddOutlined />} onClick={handleMkdir}>新建文件夹</Button>
         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleUpload} />
       </div>
-
-      {/* File table */}
-      <Table
-        dataSource={files}
-        columns={columns}
-        rowKey="path"
-        loading={loading}
-        size="small"
+      <Table dataSource={files} columns={columns} rowKey="path" loading={loading} size="small"
         pagination={{ current: page, pageSize: 50, showSizeChanger: false, onChange: setPage, showTotal: total => `共 ${total} 项` }}
-        scroll={{ x: 560, y: '45vh' }}
-        style={{ maxHeight: '50vh', overflow: 'auto' }}
-        onRow={(record) => ({
-          onDoubleClick: () => handleNavigate(record),
-        })}
-      />
+        scroll={{ x: 560, y: 'min(42vh, 360px)' }} onRow={record => ({ onDoubleClick: () => handleNavigate(record) })} />
     </Modal>
   )
 }

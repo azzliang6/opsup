@@ -147,16 +147,18 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
 
   return (
     <Modal
+      className="opsup-modal"
       title={isEdit ? '编辑服务器' : '添加服务器'}
       open={open}
       onCancel={onCancel}
       onOk={handleSubmit}
       confirmLoading={loading}
       okText={isEdit ? '更新' : '添加'}
-      width={520}
-      styles={{ body: { maxHeight: '60vh', overflowY: 'auto', paddingRight: 4 } }}
+      cancelText="取消"
+      width={560}
+      styles={{ body: { maxHeight: 'min(60vh, calc(100dvh - 200px))', overflowY: 'auto', paddingRight: 4 } }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+      <Form form={form} layout="vertical">
         <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
           <Input placeholder="如: 生产环境 Web 服务器" />
         </Form.Item>

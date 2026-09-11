@@ -3,27 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import Form from 'antd/es/form'
 import Input from 'antd/es/input'
 import Button from 'antd/es/button'
-import Card from 'antd/es/card'
-import Typography from 'antd/es/typography'
 import message from 'antd/es/message'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useAuth } from '../hooks/useAuth'
 import { getAuthStatus } from '../api/auth'
-import { useTheme } from '../contexts/ThemeContext'
-
-const { Title, Text } = Typography
+import AuthFrame from '../components/AuthFrame'
 
 export default function SetupPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const { doSetup } = useAuth()
-  const { colors } = useTheme()
 
   useEffect(() => {
     getAuthStatus().then((res) => {
-      if (res.initialized) {
-        navigate('/login')
-      }
+      if (res.initialized) navigate('/login')
     })
   }, [navigate])
 
@@ -41,64 +34,31 @@ export default function SetupPage() {
   }
 
   return (
-    <div
-      style={{
-        height: '100dvh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: colors.gradientPage,
-      }}
-    >
-      <Card
-        style={{
-          width: 420,
-          background: colors.bgCardOverlay,
-          border: `1px solid ${colors.borderSubtle}`,
-          borderRadius: 12,
-          backdropFilter: 'blur(10px)',
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={3} style={{ color: colors.textPrimary, margin: 0 }}>
-            初始化 OpsUp
-          </Title>
-          <Text style={{ color: colors.textTertiary }}>创建管理员账户</Text>
-        </div>
-
-        <Form onFinish={onFinish} size="large">
-          <Form.Item name="username" rules={[{ required: true, min: 3, message: '用户名至少3个字符' }]}>
-            <Input prefix={<UserOutlined />} placeholder="管理员用户名" />
-          </Form.Item>
-          <Form.Item name="password" rules={[
-            { required: true, min: 12, message: '密码至少12个字符' },
-            { validator: (_, value: string) => !value || new TextEncoder().encode(value).length <= 72
-              ? Promise.resolve() : Promise.reject(new Error('密码最多72个 UTF-8 字节')) },
-          ]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
-          </Form.Item>
-          <Form.Item
-            name="confirm"
-            dependencies={['password']}
-            rules={[
-              { required: true, message: '请确认密码' },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || getFieldValue('password') === value) return Promise.resolve()
-                  return Promise.reject(new Error('两次密码不一致'))
-                },
-              }),
-            ]}
-          >
-            <Input.Password prefix={<LockOutlined />} placeholder="确认密码" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} block>
-              创建管理员
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
-    </div>
+    <AuthFrame title="初始化 OpsUp" description="创建管理员账户，开始管理 SSH 连接">
+      <Form onFinish={onFinish} size="large" layout="vertical" requiredMark={false}>
+        <Form.Item name="username" label="管理员用户名" rules={[{ required: true, min: 3, message: '用户名至少3个字符' }]}>
+          <Input prefix={<UserOutlined />} placeholder="管理员用户名" autoComplete="username" />
+        </Form.Item>
+        <Form.Item name="password" label="密码" rules={[
+          { required: true, min: 12, message: '密码至少12个字符' },
+          { validator: (_, value: string) => !value || new TextEncoder().encode(value).length <= 72
+            ? Promise.resolve() : Promise.reject(new Error('密码最多72个 UTF-8 字节')) },
+        ]}>
+          <Input.Password prefix={<LockOutlined />} placeholder="密码" autoComplete="new-password" />
+        </Form.Item>
+        <Form.Item name="confirm" label="确认密码" dependencies={['password']} rules={[
+          { required: true, message: '请确认密码' },
+          ({ getFieldValue }) => ({ validator(_, value) {
+            return !value || getFieldValue('password') === value
+              ? Promise.resolve() : Promise.reject(new Error('两次密码不一致'))
+          } }),
+        ]}>
+          <Input.Password prefix={<LockOutlined />} placeholder="确认密码" autoComplete="new-password" />
+        </Form.Item>
+        <Form.Item className="auth-submit">
+          <Button type="primary" htmlType="submit" loading={loading} block>创建管理员</Button>
+        </Form.Item>
+      </Form>
+    </AuthFrame>
   )
 }
