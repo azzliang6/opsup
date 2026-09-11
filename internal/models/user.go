@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -17,6 +18,27 @@ func CountUsers(db *sql.DB) (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
 	return count, err
+}
+
+var ErrAlreadyInitialized = errors.New("already initialized")
+
+func CreateFirstUser(db *sql.DB, username, passwordHash string) (*User, error) {
+	result, err := db.Exec(
+		"INSERT INTO users (username, password) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM users)",
+		username, passwordHash,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create first user: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrAlreadyInitialized
+	}
+	id, err := result.LastInsertId()
+	return &User{ID: id, Username: username}, err
 }
 
 func CreateUser(db *sql.DB, username, passwordHash string) (*User, error) {

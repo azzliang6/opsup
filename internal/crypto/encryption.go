@@ -9,8 +9,10 @@ import (
 	"io"
 )
 
-// Encrypt encrypts plaintext using AES-256-GCM with the given hex-encoded key.
-// Returns base64(nonce || ciphertext || tag).
+// LegacyEncryptionKey is accepted only by the one-way storage migration.
+const LegacyEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// Encrypt returns hex(nonce || ciphertext || tag) using AES-256-GCM.
 func Encrypt(plaintext []byte, hexKey string) (string, error) {
 	key, err := hex.DecodeString(hexKey)
 	if err != nil {
