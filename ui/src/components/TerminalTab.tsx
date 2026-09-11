@@ -31,16 +31,11 @@ function hexToRgb(hex: string): string {
   return [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16)).join(',')
 }
 const SHORTCUTS = [
-  { label: 'ESC', data: '\x1b' }, { label: ':', data: ':' }, { label: '/', data: '/' },
-  { label: 'i', data: 'i' }, { label: 'a', data: 'a' }, { label: 'o', data: 'o' }, { label: 'O', data: 'O' },
-  { label: ':wq', data: ':wq\r' }, { label: ':q!', data: ':q!\r' },
-  { label: 'dd', data: 'dd' }, { label: 'yy', data: 'yy' }, { label: 'p', data: 'p' }, { label: 'u', data: 'u' },
-  { label: 'x', data: 'x' }, { label: 'G', data: 'G' }, { label: 'gg', data: 'gg' }, { label: '$', data: '$' },
-  { label: '0', data: '0' }, { label: 'w', data: 'w' }, { label: 'b', data: 'b' },
+  { label: 'Ctrl+C', data: '\x03' }, { label: 'Ctrl+D', data: '\x04' }, { label: 'Ctrl+Z', data: '\x1a' },
+  { label: 'Ctrl+L', data: '\x0c' }, { label: 'Ctrl+U', data: '\x15' }, { label: 'Ctrl+R', data: '\x12' },
   { label: 'Tab', data: '\t' }, { label: '↑', data: '\x1b[A' }, { label: '↓', data: '\x1b[B' }, { label: '←', data: '\x1b[D' }, { label: '→', data: '\x1b[C' },
-  { label: 'Ctrl+C', data: '\x03' }, { label: 'Ctrl+Z', data: '\x1a' }, { label: 'Ctrl+D', data: '\x04' },
-  { label: 'Ctrl+L', data: '\x0c' }, { label: 'Ctrl+U', data: '\x15' }, { label: 'Ctrl+K', data: '\x0b' },
-  { label: 'Ctrl+A', data: '\x01' }, { label: 'Ctrl+E', data: '\x05' }, { label: 'Ctrl+W', data: '\x17' }, { label: 'Ctrl+R', data: '\x12' },
+  { label: 'ESC', data: '\x1b' }, { label: ':wq', data: ':wq\r' }, { label: ':q!', data: ':q!\r' },
+  { label: 'i', data: 'i' }, { label: 'dd', data: 'dd' },
 ]
 
 export default function TerminalTab({ serverId, serverName, isActive, fontSize, onStatusChange }: Props) {
@@ -55,7 +50,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize, 
 
   return (
     <div className="terminal-session">
-      <div className="terminal-body" style={{ paddingBottom: showBar && status === 'connected' ? 44 : 0 }}>
+      <div className="terminal-body" style={{ paddingBottom: showBar && status === 'connected' ? 88 : 0 }}>
         <div ref={containerRef} className="terminal-container" />
         {status === 'connecting' && <div className="terminal-overlay"><Spin size="small" /><span>正在连接 {serverName}…</span></div>}
         {status === 'error' && termRef.current && <div className="terminal-disconnected">
@@ -74,7 +69,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize, 
         {SHORTCUTS.map(shortcut => <button className="terminal-shortcut" key={shortcut.label} onMouseDown={event => event.preventDefault()} onClick={() => sendShortcut(shortcut.data)}>{shortcut.label}</button>)}
       </div>}
       {status === 'connected' && <button className="shortcut-toggle" onMouseDown={event => event.preventDefault()} onClick={() => setShowBar(value => !value)}
-        aria-label={showBar ? '隐藏快捷键' : '显示快捷键'} title={showBar ? '隐藏快捷键' : '显示快捷键'} aria-pressed={showBar} style={{ bottom: showBar ? 54 : 10 }}>
+        aria-label={showBar ? '隐藏快捷键' : '显示快捷键'} title={showBar ? '隐藏快捷键' : '显示快捷键'}        aria-pressed={showBar} style={{ bottom: showBar ? 98 : 10 }}>
         <CodeOutlined />
       </button>}
     </div>

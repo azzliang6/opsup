@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import Input from 'antd/es/input'
 import Button from 'antd/es/button'
 import Modal from 'antd/es/modal'
@@ -46,6 +46,25 @@ export default function ServerSidebar({ onConnect, activeServerId }: Props) {
     } catch (e: any) { message.error(e.response?.data?.error || '测试失败') }
   }
   const handleModalOk = async () => { setModalOpen(false); setEditing(null); await fetchServers() }
+
+  // 移动端长按弹出服务器菜单（与桌面右键共用受控 Dropdown）
+  const [touchMenuId, setTouchMenuId] = useState<number | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFired = useRef(false)
+  const clearLongPress = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null } }
+  const onCardTouchStart = (server: Server, event: React.TouchEvent) => {
+    if (!event.touches.length) return
+    longPressFired.current = false
+    clearLongPress()
+    longPressTimer.current = setTimeout(() => { longPressFired.current = true; setTouchMenuId(server.id) }, 500)
+  }
+  const onCardTouchEnd = () => clearLongPress()
+  const onCardTouchMove = () => clearLongPress()
+  const onCardClick = (server: Server) => {
+    if (longPressFired.current) { longPressFired.current = false; return }
+    onConnect(server)
+  }
+
   const menuFor = (server: Server) => ({ items: [
     { key: 'connect', label: '连接', icon: <LinkOutlined />, onClick: () => onConnect(server) },
     { key: 'files', label: '文件管理', icon: <FolderOpenOutlined />, onClick: () => setFileManagerServer(server) },
@@ -82,9 +101,12 @@ export default function ServerSidebar({ onConnect, activeServerId }: Props) {
               <FolderOutlined /><span>{name}</span><span className="group-count">{groupMap.get(name)!.length}</span>
             </button>
             {!collapsed[name] && <div className="server-group-items">{groupMap.get(name)!.map(server => (
-              <Dropdown key={server.id} trigger={['contextMenu']} menu={menuFor(server)}>
-                <div className="server-card" data-active={activeServerId === server.id}>
-                  <button className="plain-button server-connect" aria-label={`连接 ${server.name}`} aria-current={activeServerId === server.id ? 'true' : undefined} onClick={() => onConnect(server)}>
+              <Dropdown key={server.id} trigger={['contextMenu']} menu={menuFor(server)}
+                open={touchMenuId === server.id}
+                onOpenChange={open => setTouchMenuId(open ? server.id : null)}>
+                <div className="server-card" data-active={activeServerId === server.id}
+                  onTouchStart={event => onCardTouchStart(server, event)} onTouchEnd={onCardTouchEnd} onTouchMove={onCardTouchMove}>
+                  <button className="plain-button server-connect" aria-label={`连接 ${server.name}`} aria-current={activeServerId === server.id ? 'true' : undefined} onClick={() => onCardClick(server)}>
                     <span className="server-icon"><DesktopOutlined /></span>
                     <span className="server-copy">
                       <span className="server-name" title={server.name}>{server.name}</span>

@@ -6,6 +6,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 export type ConnectionStatus = 'connecting' | 'connected' | 'error'
 export const INPUT_CHUNK_BYTES = 16 * 1024
 
+// 新数据到达时，若光标位于视口底部（用户没有上翻浏览历史）则自动滚到底部
+const autoScrollBottom = (term: Terminal) => {
+  const buffer = term.buffer.active
+  if (buffer.cursorY === term.rows - 1 || buffer.cursorY === 0) term.scrollToBottom()
+}
+
 export function* inputFrames(data: string) {
   const bytes = new TextEncoder().encode(data)
   for (let offset = 0; offset < bytes.length; offset += INPUT_CHUNK_BYTES) {
@@ -62,6 +68,7 @@ export function useTerminalConnection(serverId: number, fontSize: number, theme:
       fontSize: latest.current.fontSize,
       theme: latest.current.theme,
       fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
+      scrollback: 5000,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -127,7 +134,7 @@ export function useTerminalConnection(serverId: number, fontSize: number, theme:
       const payload = buffer.subarray(1)
       switch (buffer[0]) {
         case 0x00:
-        case 0x01: term.write(payload); break
+        case 0x01: term.write(payload); autoScrollBottom(term); break
         case 0x02: fail(new TextDecoder().decode(payload)); break
         case 0x03:
           try {

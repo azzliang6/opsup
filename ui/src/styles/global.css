@@ -57,14 +57,14 @@ button:disabled { cursor: not-allowed; }
 .sidebar-search .ant-input-prefix { color: var(--text-tertiary); }
 .add-server-button.ant-btn { background: var(--accent-soft); border-color: var(--accent-border); color: var(--text-primary); font-size: 12px; }
 .add-server-button.ant-btn:hover { background: var(--fill-hover); }
-.server-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
+.server-list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 12px 12px; }
 .server-group + .server-group { margin-top: 12px; }
 .server-group-toggle { display: flex; align-items: center; gap: 7px; width: 100%; padding: 8px 4px; border-radius: 6px; font-size: 11px; font-weight: 500; color: var(--text-tertiary); }
 .server-group-toggle:hover { color: var(--text-secondary); }
 .group-chevron { font-size: 8px; }
 .group-count { margin-left: auto; min-width: 20px; padding: 1px 5px; border-radius: 5px; background: var(--fill-medium); color: var(--text-tertiary); font: 10px var(--font-mono); text-align: center; }
 .server-group-items { display: grid; gap: 6px; }
-.server-card { position: relative; display: flex; align-items: center; gap: 4px; padding: 10px 7px 10px 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--fill-subtle); transition: background 140ms, border-color 140ms; }
+.server-card { position: relative; display: flex; align-items: center; gap: 4px; padding: 10px 7px 10px 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--fill-subtle); transition: background 140ms, border-color 140ms; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
 .server-card:hover { background: var(--fill-hover); border-color: var(--border-subtle); }
 .server-card[data-active='true'] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: inset 2px 0 var(--color-primary); }
 .server-connect { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 2px 0; }

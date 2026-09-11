@@ -1,7 +1,7 @@
 .terminal-session { height: 100%; width: 100%; display: flex; flex-direction: column; position: relative; }
 .terminal-body { flex: 1; min-height: 0; position: relative; }
-.terminal-container { width: 100%; height: 100%; padding: 10px 12px; background: var(--bg-terminal, #1a1a2e); }
-.terminal-container .xterm { height: 100%; }
+.terminal-container { width: 100%; height: 100%; padding: 10px 12px; background: var(--bg-terminal, #1a1a2e); touch-action: manipulation; }
+.terminal-container .xterm { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }
 .terminal-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: var(--bg-terminal); color: var(--text-tertiary); font-size: 12px; z-index: 10; }
 .terminal-disconnected { position: absolute; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 16px; padding: 12px 16px; max-height: 45%; overflow-y: auto; background: var(--bg-elevated); border-top: 1px solid #ff787540; box-shadow: 0 -4px 20px #0000000a; z-index: 10; }
 .terminal-disconnected > span { flex: 1; min-width: 0; color: #f07070; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -10,7 +10,7 @@
 .terminal-error-icon { font-size: 30px; color: #f07070; margin-bottom: 20px; }
 .terminal-error-card p { color: var(--text-secondary); font-size: 13px; line-height: 1.8; }
 .terminal-error-card small { display: block; color: var(--text-tertiary); margin: 8px 0 20px; }
-.mobile-shortcut-bar { position: absolute; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 5px; padding: 6px 10px; height: 44px; overflow-x: auto; background: var(--bg-tab-bar); border-top: 1px solid var(--border-subtle); scrollbar-width: none; z-index: 15; }
+.mobile-shortcut-bar { position: absolute; bottom: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 5px; padding: 6px 10px; min-height: 44px; max-height: 88px; overflow-y: auto; background: var(--bg-tab-bar); border-top: 1px solid var(--border-subtle); scrollbar-width: none; z-index: 15; }
 .mobile-shortcut-bar::-webkit-scrollbar { display: none; }
 .terminal-shortcut { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; min-width: 34px; height: 29px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--fill-subtle); color: var(--text-secondary); font: 11px var(--font-mono); cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; transition: background 120ms, border-color 120ms; box-shadow: 0 1px 0 #00000018; }
 .terminal-shortcut:hover { background: var(--fill-hover); border-color: var(--accent-border); }
