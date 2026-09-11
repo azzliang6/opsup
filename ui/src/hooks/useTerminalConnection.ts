@@ -2,15 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { attachTerminalTouch } from '../utils/terminalTouch'
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'error'
 export const INPUT_CHUNK_BYTES = 16 * 1024
-
-// 新数据到达时，若光标位于视口底部（用户没有上翻浏览历史）则自动滚到底部
-const autoScrollBottom = (term: Terminal) => {
-  const buffer = term.buffer.active
-  if (buffer.cursorY === term.rows - 1 || buffer.cursorY === 0) term.scrollToBottom()
-}
 
 export function* inputFrames(data: string) {
   const bytes = new TextEncoder().encode(data)
@@ -74,6 +69,7 @@ export function useTerminalConnection(serverId: number, fontSize: number, theme:
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
     term.open(containerRef.current)
+    const disposeTouch = attachTerminalTouch(term)
     termRef.current = term
     fitRef.current = fit
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -134,7 +130,7 @@ export function useTerminalConnection(serverId: number, fontSize: number, theme:
       const payload = buffer.subarray(1)
       switch (buffer[0]) {
         case 0x00:
-        case 0x01: term.write(payload); autoScrollBottom(term); break
+        case 0x01: term.write(payload); break
         case 0x02: fail(new TextDecoder().decode(payload)); break
         case 0x03:
           try {
@@ -166,6 +162,7 @@ export function useTerminalConnection(serverId: number, fontSize: number, theme:
       observer.disconnect()
       dataSubscription.dispose()
       resizeSubscription.dispose()
+      disposeTouch()
       term.dispose()
       queue = []
       wsRef.current = null

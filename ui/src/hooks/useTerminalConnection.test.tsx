@@ -81,6 +81,18 @@ describe('terminal connection ownership', () => {
     view.unmount()
   })
 
+  it('writes stdout and stderr without overriding the terminal scroll position', () => {
+    const view = render(<Harness />)
+    const socket = Socket.instances[0]
+    const terminal = mocks.terminals[0]
+    terminal.scrollToBottom = vi.fn()
+    act(() => { socket.receive(4); socket.receive(0, 'output'); socket.receive(1, 'stderr') })
+    expect(terminal.write.mock.calls.map(([bytes]: [Uint8Array]) => new TextDecoder().decode(bytes))).toEqual(['output', 'stderr'])
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled()
+    expect(terminal.options.scrollback).toBe(5000)
+    view.unmount()
+  })
+
   it('detaches old sockets, guards late callbacks and uses current theme/font on manual reconnect', () => {
     const view = render(<Harness />)
     const old = Socket.instances[0]
