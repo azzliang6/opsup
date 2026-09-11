@@ -50,7 +50,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize, 
 
   return (
     <div className="terminal-session">
-      <div className="terminal-body" style={{ paddingBottom: showBar && status === 'connected' ? 88 : 0 }}>
+      <div className="terminal-body">
         <div ref={containerRef} className="terminal-container" />
         {status === 'connecting' && <div className="terminal-overlay"><Spin size="small" /><span>正在连接 {serverName}…</span></div>}
         {status === 'error' && termRef.current && <div className="terminal-disconnected">
@@ -65,13 +65,15 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize, 
           </div>
         </div>}
       </div>
-      {showBar && status === 'connected' && <div className="mobile-shortcut-bar" role="group" aria-label="终端快捷键">
-        {SHORTCUTS.map(shortcut => <button className="terminal-shortcut" key={shortcut.label} onMouseDown={event => event.preventDefault()} onClick={() => sendShortcut(shortcut.data)}>{shortcut.label}</button>)}
+      {status === 'connected' && <div className="terminal-tools">
+        {showBar && <div className="mobile-shortcut-bar" role="group" aria-label="终端快捷键">
+          {SHORTCUTS.map(shortcut => <button className="terminal-shortcut" key={shortcut.label} onMouseDown={event => event.preventDefault()} onClick={() => sendShortcut(shortcut.data)}>{shortcut.label}</button>)}
+        </div>}
+        <button className="shortcut-toggle" onMouseDown={event => event.preventDefault()} onClick={() => setShowBar(value => !value)}
+          aria-label={showBar ? '隐藏快捷键' : '显示快捷键'} title={showBar ? '隐藏快捷键' : '显示快捷键'} aria-expanded={showBar}>
+          <CodeOutlined />{!showBar && <span>快捷键</span>}
+        </button>
       </div>}
-      {status === 'connected' && <button className="shortcut-toggle" onMouseDown={event => event.preventDefault()} onClick={() => setShowBar(value => !value)}
-        aria-label={showBar ? '隐藏快捷键' : '显示快捷键'} title={showBar ? '隐藏快捷键' : '显示快捷键'}        aria-pressed={showBar} style={{ bottom: showBar ? 98 : 10 }}>
-        <CodeOutlined />
-      </button>}
     </div>
   )
 }
