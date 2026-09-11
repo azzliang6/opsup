@@ -9,8 +9,8 @@ export interface FileEntry {
   path: string
 }
 
-export function listFiles(serverId: number, path: string = '/') {
-  return client.get<FileEntry[]>(`/servers/${serverId}/files`, { params: { path } })
+export function listFiles(serverId: number, path: string = '/', signal?: AbortSignal) {
+  return client.get<FileEntry[]>(`/servers/${serverId}/files`, { params: { path }, signal })
 }
 
 export function uploadFile(serverId: number, dirPath: string, file: File) {

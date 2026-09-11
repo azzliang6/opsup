@@ -1,26 +1,18 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Spin, Button } from 'antd'
+import { useEffect, useState, useMemo } from 'react'
+import { useTerminalConnection, type ConnectionStatus } from '../hooks/useTerminalConnection'
+import Spin from 'antd/es/spin'
+import Button from 'antd/es/button'
 import { ReloadOutlined, DisconnectOutlined } from '@ant-design/icons'
 import '@xterm/xterm/css/xterm.css'
 import '../styles/terminal.css'
 import { useTheme } from '../contexts/ThemeContext'
-
-const MSG_STDIN = 0x00
-const MSG_RESIZE = 0x01
-const MSG_STDOUT = 0x00
-const MSG_STDERR = 0x01
-const MSG_ERROR = 0x02
-const MSG_STATUS = 0x03
-const MSG_CONNECTED = 0x04
 
 interface Props {
   serverId: number
   serverName: string
   isActive: boolean
   fontSize: number
+  onStatusChange?: (status: ConnectionStatus) => void
 }
 
 const TERM_THEMES = {
@@ -118,230 +110,16 @@ const SHORTCUTS = [
   { label: 'Ctrl+R', data: '\x12' },
 ]
 
-export default function TerminalTab({ serverId, serverName, isActive, fontSize }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
-  const closedRef = useRef(false)
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
-  const [errorMsg, setErrorMsg] = useState('')
+export default function TerminalTab({ serverId, serverName, isActive, fontSize, onStatusChange }: Props) {
   const { mode, colors } = useTheme()
   const [showBar, setShowBar] = useState(true)
-
-  const sendShortcut = useCallback((data: string) => {
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    const encoder = new TextEncoder()
-    const dataBytes = encoder.encode(data)
-    const msg = new Uint8Array(1 + dataBytes.length)
-    msg[0] = MSG_STDIN
-    msg.set(dataBytes, 1)
-    ws.send(msg)
-  }, [])
-
-  const termTheme = useMemo(() => {
-    const base = { ...TERM_THEMES[mode] }
-    base.cursor = colors.colorPrimary
-    const rgb = hexToRgb(colors.colorPrimary)
-    base.selectionBackground = mode === 'dark'
-      ? `rgba(${rgb}, 0.3)`
-      : `rgba(${rgb}, 0.15)`
-    return base
-  }, [mode, colors.colorPrimary])
-
-  const doFit = useCallback(() => {
-    if (!fitAddonRef.current || !termRef.current) return
-    try {
-      fitAddonRef.current.fit()
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  const connect = useCallback(() => {
-    closedRef.current = false
-
-    if (!containerRef.current) return
-
-    const token = localStorage.getItem('opsup_token')
-    if (!token) {
-      setErrorMsg('未登录，请重新登录')
-      setStatus('error')
-      return
-    }
-
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${wsProto}//${window.location.host}/api/terminal/${serverId}?token=${token}`
-
-    // Dispose old terminal if exists
-    if (termRef.current) {
-      termRef.current.dispose()
-      termRef.current = null
-    }
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: fontSize,
-      fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
-      theme: termTheme,
-      allowProposedApi: true,
-    })
-
-    const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
-
-    term.loadAddon(fitAddon)
-    term.loadAddon(webLinksAddon)
-    term.open(containerRef.current)
-
-    termRef.current = term
-    fitAddonRef.current = fitAddon
-
-    // Wait a tick for the DOM to layout, then fit
-    requestAnimationFrame(() => {
-      doFit()
-    })
-
-    const ws = new WebSocket(wsUrl)
-    ws.binaryType = 'arraybuffer'
-    wsRef.current = ws
-
-    ws.onmessage = (event) => {
-      const data = event.data
-      if (typeof data === 'string') return
-
-      const buf = new Uint8Array(data)
-      if (buf.length < 1) return
-
-      const msgType = buf[0]
-      const payload = buf.slice(1)
-
-      switch (msgType) {
-        case MSG_STDOUT:
-          term.write(payload)
-          break
-        case MSG_STDERR:
-          term.write(payload)
-          break
-        case MSG_ERROR:
-          setErrorMsg(new TextDecoder().decode(payload))
-          setStatus('error')
-          break
-        case MSG_STATUS: {
-          try {
-            const s = JSON.parse(new TextDecoder().decode(payload))
-            if (s.connected === false && !closedRef.current) {
-              setErrorMsg(s.message || '会话已结束')
-              setStatus('error')
-            }
-          } catch { /* */ }
-          break
-        }
-        case MSG_CONNECTED: {
-          setStatus('connected')
-          // Fit multiple times to ensure correct terminal size is sent to SSH
-          doFit()
-          setTimeout(doFit, 50)
-          setTimeout(doFit, 200)
-          break
-        }
-      }
-    }
-
-    ws.onclose = () => {
-      if (closedRef.current) return
-      closedRef.current = true
-      setErrorMsg('SSH 连接已断开')
-      setStatus('error')
-    }
-
-    ws.onerror = () => {
-      if (closedRef.current) return
-      closedRef.current = true
-      setErrorMsg('WebSocket 连接失败')
-      setStatus('error')
-    }
-
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        const encoder = new TextEncoder()
-        const dataBytes = encoder.encode(data)
-        const msg = new Uint8Array(1 + dataBytes.length)
-        msg[0] = MSG_STDIN
-        msg.set(dataBytes, 1)
-        ws.send(msg)
-      }
-    })
-
-    let resizeTimer: ReturnType<typeof setTimeout>
-    term.onResize(({ cols, rows }) => {
-      clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const resizeMsg = new TextEncoder().encode(JSON.stringify({ cols, rows }))
-          const msg = new Uint8Array(1 + resizeMsg.length)
-          msg[0] = MSG_RESIZE
-          msg.set(resizeMsg, 1)
-          ws.send(msg)
-        }
-      }, 100)
-    })
-  }, [serverId, doFit])
-
-  useEffect(() => {
-    connect()
-    return () => {
-      closedRef.current = true
-      wsRef.current?.close()
-      termRef.current?.dispose()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Apply theme changes to live terminal
-  useEffect(() => {
-    if (termRef.current) {
-      termRef.current.options.theme = termTheme as any
-    }
-  }, [termTheme])
-
-  useEffect(() => {
-    if (isActive) {
-      setTimeout(doFit, 20)
-    }
-  }, [isActive, doFit])
-
-  // Apply font size changes to live terminal
-  useEffect(() => {
-    if (termRef.current) {
-      termRef.current.options.fontSize = fontSize
-      setTimeout(doFit, 20)
-    }
-  }, [fontSize, doFit])
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (isActive) doFit()
-    }
-    window.addEventListener('resize', handleResize)
-    const vv = window.visualViewport
-    if (vv) {
-      vv.addEventListener('resize', handleResize)
-      return () => {
-        window.removeEventListener('resize', handleResize)
-        vv.removeEventListener('resize', handleResize)
-      }
-    }
-    return () => window.removeEventListener('resize', handleResize)
-  }, [isActive, doFit])
-
-  useEffect(() => {
-    if (isActive) {
-      setTimeout(doFit, 50)
-      setTimeout(doFit, 200)
-    }
-  }, [showBar, isActive, doFit])
+  const termTheme = useMemo(() => ({
+    ...TERM_THEMES[mode],
+    cursor: colors.colorPrimary,
+    selectionBackground: `rgba(${hexToRgb(colors.colorPrimary)}, ${mode === 'dark' ? 0.3 : 0.15})`,
+  }), [mode, colors.colorPrimary])
+  const { containerRef, termRef, status, errorMsg, connect, sendShortcut } = useTerminalConnection(serverId, fontSize, termTheme, isActive, showBar)
+  useEffect(() => { onStatusChange?.(status) }, [status, onStatusChange])
 
   return (
     <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -380,7 +158,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize }
           borderTop: '1px solid rgba(255,77,79,0.3)',
           zIndex: 10,
         }}>
-          <span style={{ fontSize: 13, color: '#ff7875' }}>
+          <span role="alert" style={{ fontSize: 13, color: '#ff7875', overflowWrap: 'anywhere', minWidth: 0 }}>
             <DisconnectOutlined style={{ marginRight: 6 }} />
             {errorMsg}
           </span>
@@ -389,8 +167,6 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize }
             type="primary"
             icon={<ReloadOutlined />}
             onClick={() => {
-              setStatus('connecting')
-              setErrorMsg('')
               connect()
             }}
           >
@@ -409,7 +185,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize }
           background: colors.terminalBg,
           zIndex: 10,
         }}>
-          <div style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div role="alert" style={{ textAlign: 'center', maxWidth: 400, overflowWrap: 'anywhere' }}>
             <DisconnectOutlined style={{ fontSize: 36, color: '#ff4d4f', marginBottom: 16 }} />
             <div style={{ fontSize: 15, color: colors.textSecondary, marginBottom: 8 }}>
               {errorMsg}
@@ -421,8 +197,6 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize }
               type="primary"
               icon={<ReloadOutlined />}
               onClick={() => {
-                setStatus('connecting')
-                setErrorMsg('')
                 connect()
               }}
             >
@@ -486,6 +260,7 @@ export default function TerminalTab({ serverId, serverName, isActive, fontSize }
       {status === 'connected' && (
         <button
           onClick={() => setShowBar(v => !v)}
+          aria-label={showBar ? '隐藏快捷键' : '显示快捷键'}
           title={showBar ? '隐藏快捷键' : '显示快捷键'}
           style={{
             position: 'absolute',

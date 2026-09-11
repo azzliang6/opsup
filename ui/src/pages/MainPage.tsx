@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Layout, Button, Dropdown } from 'antd'
-import { LogoutOutlined, SunOutlined, MoonOutlined, BgColorsOutlined, CheckOutlined } from '@ant-design/icons'
+import Layout from 'antd/es/layout'
+import Button from 'antd/es/button'
+import Dropdown from 'antd/es/dropdown'
+import Drawer from 'antd/es/drawer'
+import Grid from 'antd/es/grid'
+import { MenuOutlined, LogoutOutlined, SunOutlined, MoonOutlined, BgColorsOutlined, CheckOutlined } from '@ant-design/icons'
 import ServerSidebar from '../components/ServerSidebar'
 import TerminalTabs from '../components/TerminalTabs'
 import { useTheme, ACCENT_OPTIONS } from '../contexts/ThemeContext'
@@ -15,6 +19,9 @@ export interface TabInfo {
 }
 
 export default function MainPage() {
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const screens = Grid.useBreakpoint()
+  const mobile = !screens.md
   const [tabs, setTabs] = useState<TabInfo[]>([])
   const [activeKey, setActiveKey] = useState<string>('')
   const { mode, accent, colors, toggleMode, setAccent } = useTheme()
@@ -39,6 +46,7 @@ export default function MainPage() {
   }, [])
 
   const openTerminal = useCallback((server: Server) => {
+    setDrawerOpen(false)
     const key = `${server.id}-${Date.now()}`
     setTabs((prev) => {
       const exists = prev.find((t) => t.server.id === server.id)
@@ -69,18 +77,7 @@ export default function MainPage() {
     window.location.href = '/login'
   }
 
-  return (
-    <Layout style={{ height: viewportHeight, background: colors.bgBase }}>
-      <Sider
-        width={280}
-        style={{
-          background: colors.bgSidebar,
-          borderRight: `1px solid ${colors.borderSubtle}`,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
+  const sidebar = <>        <div
           style={{
             padding: '16px 20px',
             display: 'flex',
@@ -101,6 +98,7 @@ export default function MainPage() {
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <Button
+              aria-label="切换明暗主题"
               type="text"
               size="small"
               onClick={toggleMode}
@@ -122,7 +120,7 @@ export default function MainPage() {
                 })),
               }}
             >
-              <Button type="text" size="small" icon={<BgColorsOutlined />} style={{ color: colors.textSecondary }} />
+              <Button aria-label="选择主题色" type="text" size="small" icon={<BgColorsOutlined />} style={{ color: colors.textSecondary }} />
             </Dropdown>
             <Dropdown
               menu={{
@@ -145,15 +143,30 @@ export default function MainPage() {
         <div style={{ flex: 1, overflow: 'auto' }}>
           <ServerSidebar onConnect={openTerminal} />
         </div>
-      </Sider>
+</>
+
+  return (
+    <Layout style={{ height: viewportHeight, background: colors.bgBase }}>
+      {mobile ? (
+        <Drawer title="服务器" placement="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}
+          size={300} styles={{ body: { padding: 0, background: colors.bgSidebar, display: 'flex', flexDirection: 'column' } }}>
+          {sidebar}
+        </Drawer>
+      ) : (
+        <Sider width={280} style={{ background: colors.bgSidebar, borderRight: `1px solid ${colors.borderSubtle}` }}>
+          {sidebar}
+        </Sider>
+      )}
+
       <Layout style={{ background: colors.bgBase, flex: 1, overflow: 'hidden' }}>
-        <Content style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <TerminalTabs
+        <Content style={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {mobile && <div style={{ padding: '4px 8px', borderBottom: `1px solid ${colors.borderSubtle}` }}><Button icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} aria-label="打开服务器列表">服务器</Button></div>}
+          <div style={{ flex: 1, minHeight: 0 }}><TerminalTabs
             tabs={tabs}
             activeKey={activeKey}
             onSelect={setActiveKey}
             onClose={closeTerminal}
-          />
+          /></div>
         </Content>
       </Layout>
     </Layout>

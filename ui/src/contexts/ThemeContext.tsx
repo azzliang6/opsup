@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import type { ThemeConfig } from 'antd'
-import { theme } from 'antd'
+import theme from 'antd/es/theme'
 
 export type ThemeMode = 'dark' | 'light'
 export type AccentKey = 'blue' | 'green' | 'purple' | 'orange' | 'red'

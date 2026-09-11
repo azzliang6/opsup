@@ -1,8 +1,10 @@
+import { lazy, Suspense } from 'react'
+import Spin from 'antd/es/spin'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { ConfigProvider } from 'antd'
+import ConfigProvider from 'antd/es/config-provider'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
-import MainPage from './pages/MainPage'
+const MainPage = lazy(() => import('./pages/MainPage'))
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -21,7 +23,7 @@ function ThemedApp() {
           path="/*"
           element={
             <PrivateRoute>
-              <MainPage />
+              <Suspense fallback={<Spin fullscreen tip="加载工作区…" />}><MainPage /></Suspense>
             </PrivateRoute>
           }
         />

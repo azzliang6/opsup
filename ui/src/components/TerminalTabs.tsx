@@ -1,23 +1,16 @@
-import { useState, useCallback } from 'react'
-import { Empty } from 'antd'
+import { useState, useCallback, lazy, Suspense, useEffect, useRef } from 'react'
+import Empty from 'antd/es/empty'
+import Spin from 'antd/es/spin'
 import { CloseOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
-import TerminalTab from './TerminalTab'
 import { useTheme } from '../contexts/ThemeContext'
 import type { TabInfo } from '../pages/MainPage'
+import type { ConnectionStatus } from '../hooks/useTerminalConnection'
 
+const TerminalTab = lazy(() => import('./TerminalTab'))
 const FONT_KEY = 'opsup_font_size'
-const DEFAULT_FONT_SIZE = 14
 const MIN_SIZE = 10
 const MAX_SIZE = 28
-
-function loadFontSize(): number {
-  const saved = localStorage.getItem(FONT_KEY)
-  if (saved) {
-    const n = parseInt(saved, 10)
-    if (n >= MIN_SIZE && n <= MAX_SIZE) return n
-  }
-  return DEFAULT_FONT_SIZE
-}
+const labels = { connecting: '正在连接', connected: '已连接', error: '连接断开或失败' }
 
 interface Props {
   tabs: TabInfo[]
@@ -28,207 +21,80 @@ interface Props {
 
 export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Props) {
   const { colors } = useTheme()
-  const [fontSize, setFontSize] = useState(loadFontSize)
-
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = Number(localStorage.getItem(FONT_KEY))
+    return saved >= MIN_SIZE && saved <= MAX_SIZE ? saved : 14
+  })
+  const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({})
+  const callbacks = useRef(new Map<string, (status: ConnectionStatus) => void>())
+  useEffect(() => {
+    const keys = new Set(tabs.map(tab => tab.key))
+    for (const key of callbacks.current.keys()) if (!keys.has(key)) callbacks.current.delete(key)
+    setStatuses(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => keys.has(key))))
+  }, [tabs])
+  const statusCallback = (key: string) => {
+    if (!callbacks.current.has(key)) callbacks.current.set(key, status => setStatuses(previous => previous[key] === status ? previous : { ...previous, [key]: status }))
+    return callbacks.current.get(key)!
+  }
   const changeFontSize = useCallback((delta: number) => {
-    setFontSize((prev) => {
-      const next = Math.min(MAX_SIZE, Math.max(MIN_SIZE, prev + delta))
+    setFontSize(previous => {
+      const next = Math.min(MAX_SIZE, Math.max(MIN_SIZE, previous + delta))
       localStorage.setItem(FONT_KEY, String(next))
       return next
     })
   }, [])
-
-  if (tabs.length === 0) {
-    return (
-      <div
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <span style={{ color: colors.textTertiary }}>
-              从左侧选择一个服务器开始连接
-            </span>
-          }
-        />
-      </div>
-    )
+  const focusTab = (key: string) => {
+    onSelect(key)
+    document.getElementById(`tab-${key}`)?.focus()
+  }
+  const closeTab = (key: string) => {
+    const index = tabs.findIndex(tab => tab.key === key)
+    const next = tabs[index + 1] || tabs[index - 1]
+    onClose(key)
+    if (next) focusTab(next.key)
   }
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        width: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Tab bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: colors.bgTabBar,
-          borderBottom: `1px solid ${colors.borderSubtle}`,
-          padding: '0 4px',
-          height: 38,
-          minHeight: 38,
-          flexShrink: 0,
-        }}
-      >
-        {/* Tabs - scrollable */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flex: 1,
-            overflowX: 'auto',
-            gap: 0,
-          }}
-        >
-          {tabs.map((tab) => (
-            <div
-              key={tab.key}
-              onClick={() => onSelect(tab.key)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                cursor: 'pointer',
-                fontSize: 13,
-                color: tab.key === activeKey ? colors.textPrimary : colors.textSecondary,
-                background: tab.key === activeKey ? colors.bgBase : 'transparent',
-                borderRadius: '6px 6px 0 0',
-                borderBottom: tab.key === activeKey ? `2px solid ${colors.colorPrimary}` : '2px solid transparent',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.2s',
-                userSelect: 'none',
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ color: '#52c41a', fontSize: 10 }}>&bull;</span>
-              {tab.server.name}
-              <span
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClose(tab.key)
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 16,
-                  height: 16,
-                  borderRadius: 3,
-                  fontSize: 10,
-                  color: colors.textTertiary,
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLSpanElement).style.background = colors.fillMedium
-                  ;(e.currentTarget as HTMLSpanElement).style.color = colors.textPrimary
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLSpanElement).style.background = 'transparent'
-                  ;(e.currentTarget as HTMLSpanElement).style.color = colors.textTertiary
-                }}
-              >
-                <CloseOutlined style={{ fontSize: 9 }} />
-              </span>
-            </div>
-          ))}
-        </div>
+  if (!tabs.length) return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: colors.textTertiary }}>从服务器列表选择一个服务器开始连接</span>} /></div>
 
-        {/* Font size controls */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            marginLeft: 8,
-            marginRight: 4,
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={() => changeFontSize(-1)}
-            disabled={fontSize <= MIN_SIZE}
-            style={{
-              background: colors.fillMedium,
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 4,
-              color: fontSize <= MIN_SIZE ? colors.textTertiary : colors.textSecondary,
-              width: 24,
-              height: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: fontSize <= MIN_SIZE ? 'default' : 'pointer',
-              fontSize: 11,
-            }}
-          >
-            <MinusOutlined />
-          </button>
-          <span
-            style={{
-              fontSize: 12,
-              color: colors.textSecondary,
-              minWidth: 30,
-              textAlign: 'center',
-              userSelect: 'none',
-            }}
-          >
-            {fontSize}px
-          </span>
-          <button
-            onClick={() => changeFontSize(1)}
-            disabled={fontSize >= MAX_SIZE}
-            style={{
-              background: colors.fillMedium,
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 4,
-              color: fontSize >= MAX_SIZE ? colors.textTertiary : colors.textSecondary,
-              width: 24,
-              height: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: fontSize >= MAX_SIZE ? 'default' : 'pointer',
-              fontSize: 11,
-            }}
-          >
-            <PlusOutlined />
-          </button>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', background: colors.bgTabBar, borderBottom: `1px solid ${colors.borderSubtle}`, padding: '0 4px', minHeight: 38, flexShrink: 0 }}>
+        <div role="tablist" aria-label="SSH 终端" style={{ display: 'flex', flex: 1, minWidth: 0, overflowX: 'auto' }}>
+          {tabs.map((tab, index) => {
+            const status = statuses[tab.key] || 'connecting'
+            return <div key={tab.key} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, background: tab.key === activeKey ? colors.bgBase : 'transparent', borderBottom: tab.key === activeKey ? `2px solid ${colors.colorPrimary}` : '2px solid transparent', borderRadius: '6px 6px 0 0' }}>
+              <button className="plain-button" role="tab" id={`tab-${tab.key}`} aria-controls={`panel-${tab.key}`} aria-selected={tab.key === activeKey} tabIndex={tab.key === activeKey ? 0 : -1}
+                onClick={() => onSelect(tab.key)}
+                onKeyDown={event => {
+                  let target = index
+                  if (event.key === 'ArrowRight') target = (index + 1) % tabs.length
+                  else if (event.key === 'ArrowLeft') target = (index - 1 + tabs.length) % tabs.length
+                  else if (event.key === 'Home') target = 0
+                  else if (event.key === 'End') target = tabs.length - 1
+                  else if (event.key === 'Delete') { event.preventDefault(); closeTab(tab.key); return }
+                  else return
+                  event.preventDefault()
+                  focusTab(tabs[target].key)
+                }}
+                style={{ padding: '8px', fontSize: 13, whiteSpace: 'nowrap', color: tab.key === activeKey ? colors.textPrimary : colors.textSecondary }}>
+                <span aria-label={labels[status]} title={labels[status]} style={{ color: status === 'connected' ? '#52c41a' : status === 'error' ? '#ff7875' : '#faad14', marginRight: 6 }}>&bull;</span>{tab.server.name}
+              </button>
+              <button className="plain-button" aria-label={`关闭 ${tab.server.name}`} onClick={() => closeTab(tab.key)} style={{ color: colors.textTertiary, padding: 8 }}><CloseOutlined style={{ fontSize: 10 }} /></button>
+            </div>
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginLeft: 4, flexShrink: 0, color: colors.textSecondary }}>
+          <button className="plain-button" aria-label="缩小字体" disabled={fontSize <= MIN_SIZE} onClick={() => changeFontSize(-1)} style={{ padding: 6 }}><MinusOutlined /></button>
+          <span style={{ fontSize: 12 }}>{fontSize}px</span>
+          <button className="plain-button" aria-label="放大字体" disabled={fontSize >= MAX_SIZE} onClick={() => changeFontSize(1)} style={{ padding: 6 }}><PlusOutlined /></button>
         </div>
       </div>
-
-      {/* Terminal area */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {tabs.map((tab) => (
-          <div
-            key={tab.key}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: tab.key === activeKey ? 'block' : 'none',
-            }}
-          >
-            <TerminalTab
-              serverId={tab.server.id}
-              serverName={tab.server.name}
-              isActive={tab.key === activeKey}
-              fontSize={fontSize}
-            />
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+        {tabs.map(tab => (
+          <div key={tab.key} role="tabpanel" id={`panel-${tab.key}`} aria-labelledby={`tab-${tab.key}`} hidden={tab.key !== activeKey} style={{ position: 'absolute', inset: 0 }}>
+            <Suspense fallback={<div role="status"><Spin size="small" /> 加载终端…</div>}>
+              <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />
+            </Suspense>
           </div>
         ))}
       </div>

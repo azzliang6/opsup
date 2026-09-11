@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Input, Button, Modal, message, Empty, Spin } from 'antd'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import Input from 'antd/es/input'
+import Button from 'antd/es/button'
+import Modal from 'antd/es/modal'
+import message from 'antd/es/message'
+import Empty from 'antd/es/empty'
+import Spin from 'antd/es/spin'
+import Dropdown from 'antd/es/dropdown'
 import {
   PlusOutlined,
+  MoreOutlined,
   SearchOutlined,
   DesktopOutlined,
   EditOutlined,
@@ -13,10 +20,10 @@ import {
   RightOutlined,
   DownOutlined,
 } from '@ant-design/icons'
-import { theme } from 'antd'
+import theme from 'antd/es/theme'
 import * as serverApi from '../api/servers'
-import ServerFormModal from './ServerFormModal'
-import FileManager from './FileManager'
+const ServerFormModal = lazy(() => import('./ServerFormModal'))
+const FileManager = lazy(() => import('./FileManager'))
 import { useTheme } from '../contexts/ThemeContext'
 import type { Server } from '../types'
 
@@ -187,7 +194,9 @@ export default function ServerSidebar({ onConnect }: Props) {
           {groups.map((group) => (
             <div key={group.name}>
               {/* Group header */}
-              <div
+              <button
+                className="plain-button"
+                aria-expanded={!collapsed[group.name]}
                 onClick={() => toggleGroup(group.name)}
                 style={{
                   display: 'flex',
@@ -203,10 +212,10 @@ export default function ServerSidebar({ onConnect }: Props) {
                   letterSpacing: '0.3px',
                 }}
                 onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLDivElement).style.background = colors.fillSubtle
+                  ;(e.currentTarget).style.background = colors.fillSubtle
                 }}
                 onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLDivElement).style.background = 'transparent'
+                  ;(e.currentTarget).style.background = 'transparent'
                 }}
               >
                 {collapsed[group.name] ? (
@@ -217,7 +226,7 @@ export default function ServerSidebar({ onConnect }: Props) {
                 <FolderOutlined style={{ fontSize: 12 }} />
                 <span>{group.name}</span>
                 <span style={{ opacity: 0.5, marginLeft: 2 }}>({group.servers.length})</span>
-              </div>
+              </button>
 
               {/* Group servers */}
               {!collapsed[group.name] && (
@@ -225,7 +234,6 @@ export default function ServerSidebar({ onConnect }: Props) {
                   {group.servers.map((server) => (
                     <div
                       key={server.id}
-                      onClick={() => onConnect(server)}
                       onContextMenu={(e) => handleContextMenu(e, server)}
                       style={{
                         padding: '8px 12px',
@@ -237,12 +245,13 @@ export default function ServerSidebar({ onConnect }: Props) {
                         marginLeft: 12,
                       }}
                       onMouseEnter={(e) => {
-                        ;(e.currentTarget as HTMLDivElement).style.background = colors.fillHover
+                        ;(e.currentTarget).style.background = colors.fillHover
                       }}
                       onMouseLeave={(e) => {
-                        ;(e.currentTarget as HTMLDivElement).style.background = colors.fillSubtle
+                        ;(e.currentTarget).style.background = colors.fillSubtle
                       }}
                     >
+                      <button className="plain-button server-connect" aria-label={`连接 ${server.name}`} onClick={() => onConnect(server)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <DesktopOutlined style={{ color: token.colorPrimary, fontSize: 12 }} />
                         <span style={{ fontWeight: 500, color: colors.textPrimary, fontSize: 13 }}>{server.name}</span>
@@ -253,6 +262,18 @@ export default function ServerSidebar({ onConnect }: Props) {
                           <span style={{ color: colors.textTertiary, marginLeft: 4 }}>via jump</span>
                         )}
                       </div>
+                      </button>
+                      <div className="server-actions">
+                        <Button size="small" type="text" aria-label={`文件管理 ${server.name}`} title="文件管理" icon={<FolderOpenOutlined />} onClick={() => setFileManagerServer(server)} />
+                        <Dropdown trigger={['click']} menu={{ items: [
+                          { key: 'connect', label: '连接', icon: <LinkOutlined />, onClick: () => onConnect(server) },
+                          { key: 'test', label: '测试连接', icon: <CheckCircleOutlined />, onClick: () => handleTest(server) },
+                          { key: 'edit', label: '编辑', icon: <EditOutlined />, onClick: () => handleEdit(server) },
+                          { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, onClick: () => handleDelete(server) },
+                        ] }}>
+                          <Button size="small" type="text" aria-label={`服务器操作 ${server.name}`} title="服务器操作" icon={<MoreOutlined />} />
+                        </Dropdown>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -262,7 +283,7 @@ export default function ServerSidebar({ onConnect }: Props) {
         </div>
       )}
 
-      <ServerFormModal
+      {modalOpen && <Suspense fallback={<div role="status"><Spin size="small" /> 加载服务器表单…</div>}><ServerFormModal
         open={modalOpen}
         server={editing}
         onOk={handleModalOk}
@@ -270,7 +291,7 @@ export default function ServerSidebar({ onConnect }: Props) {
           setModalOpen(false)
           setEditing(null)
         }}
-      />
+      /></Suspense>}
 
       {/* Context Menu */}
       {contextMenu && (
@@ -300,12 +321,12 @@ export default function ServerSidebar({ onConnect }: Props) {
 
       {/* File Manager Modal */}
       {fileManagerServer && (
-        <FileManager
+        <Suspense fallback={<div role="status"><Spin size="small" /> 加载文件管理…</div>}><FileManager
           open={!!fileManagerServer}
           serverId={fileManagerServer.id}
           serverName={fileManagerServer.name}
           onClose={() => setFileManagerServer(null)}
-        />
+        /></Suspense>
       )}
     </div>
   )
@@ -313,9 +334,11 @@ export default function ServerSidebar({ onConnect }: Props) {
 
 function CtxItem({ icon, label, danger, colors, onClick }: { icon: React.ReactNode; label: string; danger?: boolean; colors: any; onClick: () => void }) {
   return (
-    <div
+    <button
+      className="plain-button"
       onClick={onClick}
       style={{
+        width: '100%',
         padding: '6px 16px',
         cursor: 'pointer',
         color: danger ? '#ff4d4f' : colors.textSecondary,
@@ -324,10 +347,10 @@ function CtxItem({ icon, label, danger, colors, onClick }: { icon: React.ReactNo
         gap: 8,
         fontSize: 13,
       }}
-      onMouseEnter={(e) => ((e.target as HTMLDivElement).style.background = danger ? 'rgba(255,77,79,0.1)' : colors.fillHover)}
-      onMouseLeave={(e) => ((e.target as HTMLDivElement).style.background = 'transparent')}
+      onMouseEnter={(e) => ((e.currentTarget).style.background = danger ? 'rgba(255,77,79,0.1)' : colors.fillHover)}
+      onMouseLeave={(e) => ((e.currentTarget).style.background = 'transparent')}
     >
       {icon} {label}
-    </div>
+    </button>
   )
 }

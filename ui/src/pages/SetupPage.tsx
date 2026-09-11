@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Form, Input, Button, Card, Typography, message } from 'antd'
+import Form from 'antd/es/form'
+import Input from 'antd/es/input'
+import Button from 'antd/es/button'
+import Card from 'antd/es/card'
+import Typography from 'antd/es/typography'
+import message from 'antd/es/message'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useAuth } from '../hooks/useAuth'
 import { getAuthStatus } from '../api/auth'
@@ -65,7 +70,11 @@ export default function SetupPage() {
           <Form.Item name="username" rules={[{ required: true, min: 3, message: '用户名至少3个字符' }]}>
             <Input prefix={<UserOutlined />} placeholder="管理员用户名" />
           </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, min: 6, message: '密码至少6个字符' }]}>
+          <Form.Item name="password" rules={[
+            { required: true, min: 12, message: '密码至少12个字符' },
+            { validator: (_, value: string) => !value || new TextEncoder().encode(value).length <= 72
+              ? Promise.resolve() : Promise.reject(new Error('密码最多72个 UTF-8 字节')) },
+          ]}>
             <Input.Password prefix={<LockOutlined />} placeholder="密码" />
           </Form.Item>
           <Form.Item

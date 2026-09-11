@@ -1,6 +1,7 @@
 export interface Server {
   id: number
   name: string
+  host_key: string
   host: string
   port: number
   username: string
@@ -14,6 +15,7 @@ export interface Server {
 
 export interface ServerForm {
   name: string
+  host_key: string
   host: string
   port: number
   username: string
