@@ -1,5 +1,10 @@
 package database
 
+import (
+	"database/sql"
+	"fmt"
+)
+
 const migrationsSQL = `
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8,7 +13,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-
 CREATE TABLE IF NOT EXISTS servers (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT    NOT NULL,
@@ -22,7 +26,6 @@ CREATE TABLE IF NOT EXISTS servers (
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-
 CREATE TABLE IF NOT EXISTS sessions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(id),
@@ -33,10 +36,74 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `
 
-// incrementalMigrations adds columns to existing tables.
-var incrementalMigrations = []string{
-	`ALTER TABLE servers ADD COLUMN jump_server_id INTEGER DEFAULT NULL`,
-	`ALTER TABLE servers ADD COLUMN group_name TEXT DEFAULT ''`,
-	`ALTER TABLE servers ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'key'`,
-	`ALTER TABLE servers ADD COLUMN password TEXT DEFAULT ''`,
+var migrations = []func(*sql.Tx) error{
+	func(tx *sql.Tx) error {
+		if _, err := tx.Exec(migrationsSQL); err != nil {
+			return err
+		}
+		// The unversioned release may already contain some or all of these columns.
+		for _, column := range []struct{ name, definition string }{
+			{"jump_server_id", "INTEGER DEFAULT NULL"},
+			{"group_name", "TEXT DEFAULT ''"},
+			{"auth_type", "TEXT NOT NULL DEFAULT 'key'"},
+			{"password", "TEXT DEFAULT ''"},
+		} {
+			if err := addServerColumn(tx, column.name, column.definition); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+	func(tx *sql.Tx) error {
+		return addServerColumn(tx, "host_key", "TEXT NOT NULL DEFAULT ''")
+	},
+}
+
+func migrate(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var version int
+	if err := tx.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version > len(migrations) {
+		return fmt.Errorf("database version %d is newer than supported version %d", version, len(migrations))
+	}
+	for i := version; i < len(migrations); i++ {
+		if err := migrations[i](tx); err != nil {
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func addServerColumn(tx *sql.Tx, name, definition string) error {
+	rows, err := tx.Query("PRAGMA table_info(servers)")
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var column, kind string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &column, &kind, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		found = found || column == name
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil || found {
+		return err
+	}
+	_, err = tx.Exec("ALTER TABLE servers ADD COLUMN " + name + " " + definition)
+	return err
 }

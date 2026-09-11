@@ -1,18 +1,18 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"io"
+	"mime"
 	"net/http"
 	"path"
-	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/azzliang6/opsup/internal/crypto"
-	"github.com/azzliang6/opsup/internal/models"
 	"github.com/azzliang6/opsup/internal/sftpclient"
+	"github.com/gin-gonic/gin"
 )
 
 type fileInfo struct {
@@ -24,48 +24,46 @@ type fileInfo struct {
 	Path    string    `json:"path"`
 }
 
+const maxUploadBody = 256 * 1024 * 1024
+const sftpOperationTimeout = 15 * time.Minute
+
+func sftpOperation(c *gin.Context) context.CancelFunc {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), sftpOperationTimeout)
+	c.Request = c.Request.WithContext(ctx)
+	deadline, _ := ctx.Deadline()
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline)
+	return func() {
+		cancel()
+		_ = controller.SetReadDeadline(time.Time{})
+		_ = controller.SetWriteDeadline(time.Time{})
+	}
+}
+
 func connectSFTP(c *gin.Context, encKey string) (*sftpclient.Client, error) {
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	server, err := models.GetServer(getDB(c), id)
-	if err != nil || server == nil {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return nil, fmt.Errorf("invalid server id")
+	}
+	server, err := loadConnectionServer(c.Request.Context(), getDB(c), id)
+	if err != nil {
+		return nil, fmt.Errorf("load server: %w", err)
+	}
+	if server == nil {
 		return nil, fmt.Errorf("server not found")
 	}
-
-	privateKey, _ := crypto.Decrypt(server.PrivateKey, encKey)
-	var passwordStr string
-	if server.Password != "" {
-		pwBytes, err := crypto.Decrypt(server.Password, encKey)
-		if err == nil {
-			passwordStr = string(pwBytes)
-		}
+	owner, err := dialServer(c.Request.Context(), getDB(c), server, encKey)
+	if err != nil {
+		return nil, err
 	}
-
-	if server.JumpServerID != nil && *server.JumpServerID != 0 {
-		jumpServer, err := models.GetServer(getDB(c), *server.JumpServerID)
-		if err != nil || jumpServer == nil {
-			return nil, fmt.Errorf("jump server not found")
-		}
-		jumpKey, _ := crypto.Decrypt(jumpServer.PrivateKey, encKey)
-		var jumpPassword string
-		if jumpServer.Password != "" {
-			jpBytes, err := crypto.Decrypt(jumpServer.Password, encKey)
-			if err == nil {
-				jumpPassword = string(jpBytes)
-			}
-		}
-		return sftpclient.NewSFTPClientViaJump(
-			jumpServer.Host, jumpServer.Port, jumpServer.Username, jumpServer.AuthType, jumpKey, jumpPassword,
-			server.Host, server.Port, server.Username, server.AuthType, privateKey, passwordStr,
-		)
-	}
-
-	return sftpclient.NewSFTPClient(
-		server.Host, server.Port, server.Username, server.AuthType, privateKey, passwordStr,
-	)
+	return sftpclient.NewClient(c.Request.Context(), owner)
 }
 
 func SFTPList(encKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		cancel := sftpOperation(c)
+		defer cancel()
 		dirPath := c.Query("path")
 		if dirPath == "" {
 			dirPath = "/"
@@ -102,17 +100,37 @@ func SFTPList(encKey string) gin.HandlerFunc {
 
 func SFTPUpload(encKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		dirPath := c.PostForm("path")
+		cancel := sftpOperation(c)
+		defer cancel()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBody)
+		err := c.Request.ParseMultipartForm(8 * 1024 * 1024)
+		if c.Request.MultipartForm != nil {
+			defer c.Request.MultipartForm.RemoveAll()
+		}
+		if err != nil {
+			status := http.StatusBadRequest
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			c.JSON(status, gin.H{"error": "invalid upload or request exceeds 256 MiB"})
+			return
+		}
+		dirPath := c.Request.FormValue("path")
 		if dirPath == "" {
 			dirPath = "/"
 		}
-
 		file, header, err := c.Request.FormFile("file")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "no file provided"})
 			return
 		}
 		defer file.Close()
+		filename := path.Base(strings.ReplaceAll(header.Filename, "\\", "/"))
+		if filename == "." || filename == "/" || filename == ".." || strings.ContainsRune(filename, 0) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+			return
+		}
 
 		client, err := connectSFTP(c, encKey)
 		if err != nil {
@@ -121,16 +139,9 @@ func SFTPUpload(encKey string) gin.HandlerFunc {
 		}
 		defer client.Close()
 
-		remotePath := path.Join(dirPath, header.Filename)
-		dst, err := client.Create(remotePath)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("create file: %v", err)})
-			return
-		}
-		defer dst.Close()
-
-		if _, err := io.Copy(dst, file); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("upload: %v", err)})
+		remotePath := path.Join(dirPath, filename)
+		if err := client.Upload(remotePath, file); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -140,6 +151,8 @@ func SFTPUpload(encKey string) gin.HandlerFunc {
 
 func SFTPDownload(encKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		cancel := sftpOperation(c)
+		defer cancel()
 		filePath := c.Query("path")
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -166,7 +179,7 @@ func SFTPDownload(encKey string) gin.HandlerFunc {
 			return
 		}
 
-		c.Header("Content-Disposition", "attachment; filename="+filepath.Base(filePath))
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(filePath)}))
 		c.Header("Content-Length", strconv.FormatInt(stat.Size(), 10))
 		c.DataFromReader(http.StatusOK, stat.Size(), "application/octet-stream", remoteFile, nil)
 	}
@@ -174,6 +187,8 @@ func SFTPDownload(encKey string) gin.HandlerFunc {
 
 func SFTPMkdir(encKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		cancel := sftpOperation(c)
+		defer cancel()
 		var req struct {
 			Path string `json:"path" binding:"required"`
 		}
@@ -200,6 +215,8 @@ func SFTPMkdir(encKey string) gin.HandlerFunc {
 
 func SFTPDelete(encKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		cancel := sftpOperation(c)
+		defer cancel()
 		filePath := c.Query("path")
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})

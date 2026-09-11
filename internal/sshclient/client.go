@@ -1,119 +1,167 @@
 package sshclient
 
 import (
+	"context"
+	"crypto/subtle"
 	"fmt"
 	"net"
+	"strconv"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
-// TestDial attempts to connect to the SSH server and returns an error if it fails.
-func TestDial(host string, port int, username string, authType string, privateKey []byte, password string) error {
-	config, err := makeConfig(username, authType, privateKey, password)
-	if err != nil {
-		return err
-	}
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), config)
-	if err != nil {
-		return err
-	}
-	client.Close()
-	return nil
+const SetupTimeout = 15 * time.Second
+
+type Config struct {
+	Host       string
+	Port       int
+	Username   string
+	AuthType   string
+	PrivateKey []byte
+	Password   string
+	HostKey    string
 }
 
-// TestDialViaJump tests connection through a jump host.
-func TestDialViaJump(jumpHost string, jumpPort int, jumpUser string, jumpAuthType string, jumpKey []byte, jumpPassword string, targetHost string, targetPort int, targetUser string, targetAuthType string, targetKey []byte, targetPassword string) error {
-	jumpClient, err := Dial(jumpHost, jumpPort, jumpUser, jumpAuthType, jumpKey, jumpPassword)
-	if err != nil {
-		return fmt.Errorf("jump host: %w", err)
-	}
-	defer jumpClient.Close()
-
-	conn, err := dialThroughJump(jumpClient, targetHost, targetPort, targetUser, targetAuthType, targetKey, targetPassword)
-	if err != nil {
-		return err
-	}
-	conn.Close()
-	return nil
+// Client owns the target and, when present, the jump transport. Close tears down
+// the physical socket first so blocked SSH channel writes cannot delay cleanup.
+type Client struct {
+	*ssh.Client
+	transport net.Conn
+	jump      *Client
+	done      chan struct{}
+	once      sync.Once
 }
 
-// Dial establishes a direct SSH connection.
-func Dial(host string, port int, username string, authType string, privateKey []byte, password string) (*ssh.Client, error) {
-	config, err := makeConfig(username, authType, privateKey, password)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), config)
-	if err != nil {
-		return nil, fmt.Errorf("ssh dial %s:%d: %w", host, port, err)
-	}
-	return conn, nil
+func (c *Client) Close() error {
+	var err error
+	c.once.Do(func() {
+		close(c.done)
+		if c.jump != nil {
+			_ = c.jump.Close()
+		}
+		err = c.transport.Close()
+	})
+	return err
 }
 
-// DialViaJump establishes an SSH connection through a jump host.
-// Returns the final SSH client connected to the target.
-func DialViaJump(jumpHost string, jumpPort int, jumpUser string, jumpAuthType string, jumpKey []byte, jumpPassword string, targetHost string, targetPort int, targetUser string, targetAuthType string, targetKey []byte, targetPassword string) (*ssh.Client, error) {
-	jumpClient, err := Dial(jumpHost, jumpPort, jumpUser, jumpAuthType, jumpKey, jumpPassword)
-	if err != nil {
-		return nil, fmt.Errorf("jump host %s:%d: %w", jumpHost, jumpPort, err)
-	}
-
-	targetClient, err := dialThroughJump(jumpClient, targetHost, targetPort, targetUser, targetAuthType, targetKey, targetPassword)
-	if err != nil {
-		jumpClient.Close()
-		return nil, fmt.Errorf("target %s:%d via jump: %w", targetHost, targetPort, err)
-	}
-
-	return targetClient, nil
+func (c *Client) watch(ctx context.Context) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = c.Close()
+		case <-c.done:
+		}
+	}()
 }
 
-// dialThroughJump dials the target through an existing jump client connection.
-func dialThroughJump(jumpClient *ssh.Client, targetHost string, targetPort int, targetUser string, targetAuthType string, targetKey []byte, targetPassword string) (*ssh.Client, error) {
-	targetConfig, err := makeConfig(targetUser, targetAuthType, targetKey, targetPassword)
-	if err != nil {
-		return nil, err
+func hostKeyCallback(pin string) ssh.HostKeyCallback {
+	return func(hostname string, _ net.Addr, key ssh.PublicKey) error {
+		observed := ssh.FingerprintSHA256(key)
+		if pin == "" {
+			return fmt.Errorf("host key not pinned for %s; observed %s; independently verify this fingerprint before saving it", hostname, observed)
+		}
+		if subtle.ConstantTimeCompare([]byte(pin), []byte(observed)) != 1 {
+			return fmt.Errorf("host key mismatch for %s: expected %s, observed %s; independently verify the server identity", hostname, pin, observed)
+		}
+		return nil
 	}
-
-	// Open a TCP connection to the target through the jump host
-	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-	conn, err := jumpClient.Dial("tcp", targetAddr)
-	if err != nil {
-		return nil, fmt.Errorf("jump dial to %s: %w", targetAddr, err)
-	}
-
-	// Upgrade the TCP connection to SSH
-	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetAddr, targetConfig)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("ssh handshake to %s: %w", targetAddr, err)
-	}
-
-	return ssh.NewClient(ncc, chans, reqs), nil
 }
 
-func makeConfig(username string, authType string, privateKey []byte, password string) (*ssh.ClientConfig, error) {
-	var authMethods []ssh.AuthMethod
-
-	if authType == "password" && password != "" {
-		authMethods = append(authMethods, ssh.Password(password))
-	} else if len(privateKey) > 0 {
-		signer, err := ssh.ParsePrivateKey(privateKey)
+func makeConfig(cfg Config) (*ssh.ClientConfig, error) {
+	var method ssh.AuthMethod
+	switch cfg.AuthType {
+	case "password":
+		if cfg.Password == "" {
+			return nil, fmt.Errorf("no password available")
+		}
+		method = ssh.Password(cfg.Password)
+	case "key":
+		signer, err := ssh.ParsePrivateKey(cfg.PrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("parse private key: %w", err)
 		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	} else {
-		return nil, fmt.Errorf("no authentication method available")
+		method = ssh.PublicKeys(signer)
+	default:
+		return nil, fmt.Errorf("unsupported authentication type %q", cfg.AuthType)
 	}
-
-	return &ssh.ClientConfig{
-		User:            username,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
-	}, nil
+	return &ssh.ClientConfig{User: cfg.Username, Auth: []ssh.AuthMethod{method}, HostKeyCallback: hostKeyCallback(cfg.HostKey)}, nil
 }
 
-// Ensure net import is available
-var _ net.Conn
+func Dial(ctx context.Context, cfg Config) (*Client, error) {
+	config, err := makeConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	setup, cancel := context.WithTimeout(ctx, SetupTimeout)
+	defer cancel()
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+	conn, err := (&net.Dialer{}).DialContext(setup, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+	}
+	owner := &Client{transport: conn, done: make(chan struct{})}
+	stop := context.AfterFunc(setup, func() { _ = owner.Close() })
+	defer stop()
+	deadline, _ := setup.Deadline()
+	_ = conn.SetDeadline(deadline)
+	ncc, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		_ = owner.Close()
+		if setup.Err() != nil {
+			err = setup.Err()
+		}
+		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
+	}
+	owner.Client = ssh.NewClient(ncc, chans, reqs)
+	if !stop() || setup.Err() != nil {
+		_ = owner.Close()
+		return nil, setup.Err()
+	}
+	_ = conn.SetDeadline(time.Time{})
+	owner.watch(ctx)
+	return owner, nil
+}
+
+func DialViaJump(ctx context.Context, jump, target Config) (*Client, error) {
+	targetConfig, err := makeConfig(target)
+	if err != nil {
+		return nil, err
+	}
+	jumpClient, err := Dial(ctx, jump)
+	if err != nil {
+		return nil, fmt.Errorf("jump host: %w", err)
+	}
+	setup, cancel := context.WithTimeout(ctx, SetupTimeout)
+	defer cancel()
+	// SSH forwarded connections do not implement deadlines. Closing the physical
+	// jump socket bounds both channel-open and nested SSH handshake operations.
+	stop := context.AfterFunc(setup, func() { _ = jumpClient.Close() })
+	defer stop()
+	addr := net.JoinHostPort(target.Host, strconv.Itoa(target.Port))
+	conn, err := jumpClient.Dial("tcp", addr)
+	if err != nil {
+		_ = jumpClient.Close()
+		if setup.Err() != nil {
+			err = setup.Err()
+		}
+		return nil, fmt.Errorf("jump dial %s: %w", addr, err)
+	}
+	ncc, chans, reqs, err := ssh.NewClientConn(conn, addr, targetConfig)
+	if err != nil {
+		_ = jumpClient.Close()
+		_ = conn.Close()
+		if setup.Err() != nil {
+			err = setup.Err()
+		}
+		return nil, fmt.Errorf("target handshake %s: %w", addr, err)
+	}
+	owner := &Client{Client: ssh.NewClient(ncc, chans, reqs), transport: conn, jump: jumpClient, done: make(chan struct{})}
+	if !stop() || setup.Err() != nil {
+		_ = owner.Close()
+		return nil, setup.Err()
+	}
+	owner.watch(ctx)
+	return owner, nil
+}

@@ -1,8 +1,17 @@
 import { useEffect, useState, useRef } from 'react'
-import { Modal, Form, Input, InputNumber, Select, Button, Radio, AutoComplete, message } from 'antd'
+import Modal from 'antd/es/modal'
+import Form from 'antd/es/form'
+import Input from 'antd/es/input'
+import InputNumber from 'antd/es/input-number'
+import Select from 'antd/es/select'
+import Button from 'antd/es/button'
+import Radio from 'antd/es/radio'
+import AutoComplete from 'antd/es/auto-complete'
+import message from 'antd/es/message'
 import { CopyOutlined, EditOutlined, SwapOutlined, UploadOutlined, KeyOutlined, LockOutlined } from '@ant-design/icons'
 import * as serverApi from '../api/servers'
 import { useTheme } from '../contexts/ThemeContext'
+import { HOST_KEY_PATTERN } from '../utils/hostKey'
 import type { Server, ServerForm } from '../types'
 
 interface Props {
@@ -48,13 +57,15 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
   }
 
   useEffect(() => {
+    let active = true
     if (open) {
-      serverApi.listServers().then((list) => setExistingServers(list || []))
+      serverApi.listServers().then((list) => { if (active) setExistingServers(list || []) }).catch(() => { if (active) message.error('加载服务器列表失败') })
 
       if (server) {
         form.setFieldsValue({
           name: server.name,
           host: server.host,
+          host_key: server.host_key || '',
           port: server.port,
           username: server.username,
           auth_type: server.auth_type || 'key',
@@ -72,7 +83,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
         setJumpServerId(server.jump_server_id || null)
       } else {
         form.resetFields()
-        form.setFieldsValue({ port: 22, auth_type: 'key' })
+        form.setFieldsValue({ port: 22, auth_type: 'key', host_key: '' })
         setAuthType('key')
         setKeySource(existingServers.length > 0 ? 'reuse' : 'new')
         setReuseServerId(null)
@@ -80,12 +91,14 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
         setJumpServerId(null)
       }
     }
+    return () => { active = false }
   }, [open, server, form])
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
       values.auth_type = authType
+      values.host_key = (values.host_key || '').trim()
 
       if (authType === 'password') {
         values.private_key = ''
@@ -134,16 +147,18 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
 
   return (
     <Modal
+      className="opsup-modal"
       title={isEdit ? '编辑服务器' : '添加服务器'}
       open={open}
       onCancel={onCancel}
       onOk={handleSubmit}
       confirmLoading={loading}
       okText={isEdit ? '更新' : '添加'}
-      width={520}
-      styles={{ body: { maxHeight: '60vh', overflowY: 'auto', paddingRight: 4 } }}
+      cancelText="取消"
+      width={560}
+      styles={{ body: { maxHeight: 'min(60vh, calc(100dvh - 200px))', overflowY: 'auto', paddingRight: 4 } }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+      <Form form={form} layout="vertical">
         <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
           <Input placeholder="如: 生产环境 Web 服务器" />
         </Form.Item>
@@ -168,6 +183,16 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
           rules={[{ required: true, message: '请输入SSH用户名' }]}
         >
           <Input placeholder="root" />
+        </Form.Item>
+
+        <Form.Item
+          name="host_key"
+          label="SSH 主机密钥指纹"
+          normalize={(value: string) => value.trim()}
+          rules={[{ pattern: HOST_KEY_PATTERN, message: '请输入 SHA256: 后跟 43 位 Base64 字符的指纹' }]}
+          extra={<span>可留空保存，但未验证指纹时无法连接。请通过独立可信控制台核对主机公钥，例如 <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>。实际协商也可能使用 ECDSA 或 RSA，需核对对应公钥文件的 SHA256 指纹。连接错误中的观测指纹仅供比对，请勿直接信任或自动接受。</span>}
+        >
+          <Input placeholder="SHA256:…" autoComplete="off" />
         </Form.Item>
 
         {/* Auth type selector */}
@@ -294,7 +319,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
             }))}
             style={{ width: '100%' }}
             filterOption={(input, option) =>
-              option?.value?.toLowerCase().includes(input.toLowerCase())
+              option?.value?.toLowerCase().includes(input.toLowerCase()) ?? false
             }
           />
         </Form.Item>

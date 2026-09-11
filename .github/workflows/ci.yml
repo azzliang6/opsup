@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+      - name: Frontend tests
+        working-directory: ui
+        run: npm test
+      - name: Typecheck and build frontend
+        working-directory: ui
+        run: npm run build
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l main.go internal)"
+      - name: Vet and race-test Go
+        run: |
+          go vet ./...
+          go test -race ./...
+      - name: Build binary
+        run: CGO_ENABLED=1 go build -trimpath -o opsup .
+      - name: Build container
+        run: docker build -t opsup:ci .

@@ -1,0 +1,10 @@
+.git
+.github
+ui/node_modules
+ui/dist
+*.db
+*.db-wal
+*.db-shm
+*.secrets.json
+opsup
+opsup-arm64

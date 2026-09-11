@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Layout, Button, Dropdown } from 'antd'
-import { LogoutOutlined, SunOutlined, MoonOutlined, BgColorsOutlined, CheckOutlined } from '@ant-design/icons'
+import Layout from 'antd/es/layout'
+import Button from 'antd/es/button'
+import Dropdown from 'antd/es/dropdown'
+import Drawer from 'antd/es/drawer'
+import Grid from 'antd/es/grid'
+import { MenuOutlined, LogoutOutlined, SunOutlined, MoonOutlined, BgColorsOutlined, CheckOutlined } from '@ant-design/icons'
 import ServerSidebar from '../components/ServerSidebar'
 import TerminalTabs from '../components/TerminalTabs'
 import { useTheme, ACCENT_OPTIONS } from '../contexts/ThemeContext'
@@ -8,58 +12,51 @@ import type { AccentKey } from '../contexts/ThemeContext'
 import type { Server } from '../types'
 
 const { Sider, Content } = Layout
-
-export interface TabInfo {
-  key: string
-  server: Server
-}
+export interface TabInfo { key: string; server: Server }
 
 export default function MainPage() {
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const mobile = !Grid.useBreakpoint().md
   const [tabs, setTabs] = useState<TabInfo[]>([])
-  const [activeKey, setActiveKey] = useState<string>('')
-  const { mode, accent, colors, toggleMode, setAccent } = useTheme()
-
+  const [activeKey, setActiveKey] = useState('')
+  const { mode, accent, toggleMode, setAccent } = useTheme()
   const username = localStorage.getItem('opsup_username') || ''
-
-  // Track visual viewport to keep shortcut bar above virtual keyboard
-  const [viewportHeight, setViewportHeight] = useState(() =>
-    window.visualViewport ? window.visualViewport.height : window.innerHeight
-  )
+  const [viewportHeight, setViewportHeight] = useState(() => window.visualViewport?.height || window.innerHeight)
 
   useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
-    const update = () => setViewportHeight(vv.height)
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+    const viewport = window.visualViewport
+    const update = () => setViewportHeight(viewport?.height || window.innerHeight)
+    update()
+    window.addEventListener('resize', update)
+    viewport?.addEventListener('resize', update)
+    viewport?.addEventListener('scroll', update)
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+      viewport?.removeEventListener('resize', update)
+      viewport?.removeEventListener('scroll', update)
     }
   }, [])
 
   const openTerminal = useCallback((server: Server) => {
+    setDrawerOpen(false)
     const key = `${server.id}-${Date.now()}`
-    setTabs((prev) => {
-      const exists = prev.find((t) => t.server.id === server.id)
+    setTabs(previous => {
+      const exists = previous.find(tab => tab.server.id === server.id)
       if (exists) {
         setActiveKey(exists.key)
-        return prev
+        return previous
       }
       setActiveKey(key)
-      return [...prev, { key, server }]
+      return [...previous, { key, server }]
     })
   }, [])
 
   const closeTerminal = useCallback((targetKey: string) => {
-    setTabs((prev) => {
-      const newTabs = prev.filter((t) => t.key !== targetKey)
-      if (activeKey === targetKey && newTabs.length > 0) {
-        setActiveKey(newTabs[newTabs.length - 1].key)
-      } else if (newTabs.length === 0) {
-        setActiveKey('')
-      }
-      return newTabs
+    setTabs(previous => {
+      const next = previous.filter(tab => tab.key !== targetKey)
+      if (activeKey === targetKey && next.length) setActiveKey(next[next.length - 1].key)
+      else if (!next.length) setActiveKey('')
+      return next
     })
   }, [activeKey])
 
@@ -69,91 +66,44 @@ export default function MainPage() {
     window.location.href = '/login'
   }
 
+  const sidebar = <>
+    {!mobile && <header className="sidebar-header">
+      <span className="brand-mark" aria-hidden="true">&gt;_</span>
+      <div className="sidebar-brand"><strong>OpsUp</strong><small>Web SSH Terminal</small></div>
+    </header>}
+    <div className="sidebar-content">
+      <ServerSidebar onConnect={openTerminal} activeServerId={tabs.find(tab => tab.key === activeKey)?.server.id} />
+    </div>
+    <footer className="sidebar-footer">
+      <Dropdown trigger={['click']} menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: logout }] }}>
+        <Button className="account-button" type="text" title={username}>
+          <span className="account-avatar" aria-hidden="true">{(Array.from(username)[0] || 'U').toUpperCase()}</span>
+          <span>{username || '账户'}</span>
+        </Button>
+      </Dropdown>
+      <Button className="theme-action" aria-label="切换明暗主题" title={mode === 'dark' ? '切换浅色主题' : '切换深色主题'} type="text" size="small" onClick={toggleMode} icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} />
+      <Dropdown trigger={['click']} menu={{ items: ACCENT_OPTIONS.map(option => ({
+        key: option.key,
+        label: <div className="accent-option"><span className="accent-swatch" style={{ background: option.color }} /><span>{option.label}</span>{accent === option.key && <CheckOutlined style={{ marginLeft: 'auto' }} />}</div>,
+        onClick: () => setAccent(option.key as AccentKey),
+      })) }}>
+        <Button className="theme-action" aria-label="选择主题色" title="选择主题色" type="text" size="small" icon={<BgColorsOutlined />} />
+      </Dropdown>
+    </footer>
+  </>
+
   return (
-    <Layout style={{ height: viewportHeight, background: colors.bgBase }}>
-      <Sider
-        width={280}
-        style={{
-          background: colors.bgSidebar,
-          borderRight: `1px solid ${colors.borderSubtle}`,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={{
-            padding: '16px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: `1px solid ${colors.borderSubtle}`,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 18,
-              fontWeight: 600,
-              color: colors.textPrimary,
-              fontFamily: 'monospace',
-            }}
-          >
-            OpsUp
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Button
-              type="text"
-              size="small"
-              onClick={toggleMode}
-              icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
-              style={{ color: colors.textSecondary }}
-            />
-            <Dropdown
-              menu={{
-                items: ACCENT_OPTIONS.map((a) => ({
-                  key: a.key,
-                  label: (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 14, height: 14, borderRadius: '50%', background: a.color }} />
-                      <span>{a.label}</span>
-                      {accent === a.key && <CheckOutlined style={{ marginLeft: 'auto' }} />}
-                    </div>
-                  ),
-                  onClick: () => setAccent(a.key as AccentKey),
-                })),
-              }}
-            >
-              <Button type="text" size="small" icon={<BgColorsOutlined />} style={{ color: colors.textSecondary }} />
-            </Dropdown>
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: 'logout',
-                    icon: <LogoutOutlined />,
-                    label: '退出登录',
-                    onClick: logout,
-                  },
-                ],
-              }}
-            >
-              <Button type="text" size="small" style={{ color: colors.textSecondary }}>
-                {username}
-              </Button>
-            </Dropdown>
-          </div>
-        </div>
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <ServerSidebar onConnect={openTerminal} />
-        </div>
-      </Sider>
-      <Layout style={{ background: colors.bgBase, flex: 1, overflow: 'hidden' }}>
-        <Content style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <TerminalTabs
-            tabs={tabs}
-            activeKey={activeKey}
-            onSelect={setActiveKey}
-            onClose={closeTerminal}
-          />
+    <Layout className="app-layout" style={{ height: viewportHeight }}>
+      {mobile ? (
+        <Drawer title="OpsUp · 服务器" placement="left" open={drawerOpen} onClose={() => setDrawerOpen(false)} size={320}
+          styles={{ wrapper: { maxWidth: 'calc(100vw - 24px)' }, body: { padding: 0, background: 'var(--bg-sidebar)', display: 'flex', flexDirection: 'column' } }}>
+          {sidebar}
+        </Drawer>
+      ) : <Sider width={288} className="app-sidebar">{sidebar}</Sider>}
+      <Layout className="workspace-layout">
+        <Content className="workspace-content">
+          {mobile && <header className="mobile-toolbar"><Button type="text" size="small" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} aria-label="打开服务器列表">服务器</Button><span>OpsUp</span></header>}
+          <div className="workspace-terminal"><TerminalTabs tabs={tabs} activeKey={activeKey} onSelect={setActiveKey} onClose={closeTerminal} /></div>
         </Content>
       </Layout>
     </Layout>

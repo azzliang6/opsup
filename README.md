@@ -138,39 +138,89 @@ Binary frames, first byte is message type:
 
 ## Quick Start
 
+Requires Go 1.25+, a C compiler for SQLite/CGO, make, and Node.js 22.22.2+ (or 24.15+).
+
 ```bash
-# Build (frontend + backend)
 make build
-
-# Run (default port 8080)
-./opsup
-
-# Custom configuration
-OPSUP_LISTEN=:9090 \
-OPSUP_JWT_SECRET=your-secret \
-OPSUP_ENCRYPTION_KEY=0123456789abcdef...（64-char hex） \
-./opsup
-
-# Development mode (run separately)
-cd ui && npm run dev    # Frontend at localhost:5173
-go run main.go          # Backend at localhost:8080
+# Initialize the administrator locally before exposing the service through HTTPS.
+OPSUP_LISTEN=127.0.0.1:8080 OPSUP_DB_PATH=./data/opsup.db ./opsup
 ```
 
-### Docker
+For development, run `make build-frontend` first, then run these in separate terminals:
+
+```bash
+cd ui && npm run dev
+# From the repository root; keep data outside go run's temporary executable directory.
+OPSUP_DB_PATH="$PWD/dev-data/opsup.db" go run .
+```
+
+Vite proxies both HTTP and WebSocket requests under `/api`.
+
+### Configuration and backups
+
+| Variable | Default / requirement |
+|---|---|
+| `OPSUP_DB_PATH` | `opsup.db` next to the executable |
+| `OPSUP_LISTEN` | `:8080` |
+| `OPSUP_SECRETS_PATH` | `<database path>.secrets.json`, generated once with mode `0600` |
+| `OPSUP_JWT_SECRET` | Persistent random secret when unset; overrides require at least 32 bytes and must not use the old default |
+| `OPSUP_ENCRYPTION_KEY` | Persistent random key when unset; overrides require 64 hexadecimal characters |
+
+**Back up the database and its encryption key together.** Never regenerate or delete the key on restart. Environment-provided keys must remain stable in your deployment's secret manager. Keep secret files out of Git. No secret file is created when both keys are supplied through the environment.
+
+Docker's `/data` volume persists both the default database and secret file:
 
 ```bash
 docker build -t opsup .
-docker run -d -p 8080:8080 -v opsup-data:/data opsup
+docker run -d -p 127.0.0.1:8080:8080 -v opsup-data:/data opsup
 ```
 
-## Security
+### Upgrading existing installations
 
-- **Encrypted private key storage**: AES-256-GCM, key loaded from environment variable
-- **Password hashing**: bcrypt
-- **JWT authentication**: 24-hour expiry, WebSocket auth via query param
-- **SQL injection prevention**: Parameterized queries throughout
-- **WebSocket concurrency safety**: Write operations serialized via sync.Mutex
-- **No client-side key exposure**: Key reuse copies encrypted data server-side, never sent to the browser
+1. Stop the old service and back up the database (including any remaining WAL files) and any custom encryption key.
+2. If you previously configured a custom `OPSUP_ENCRYPTION_KEY`, continue supplying that exact key.
+3. If you used the old public default key, remove any explicit old-default setting. Startup generates a persistent random key and transactionally re-encrypts legacy credentials.
+4. If any credential cannot be decrypted, startup stops without partially changing credentials. Restore the original key and retry; do not delete data or the secret file.
+5. The default JWT key changes, requiring login again. Enroll trusted SSH fingerprints for each target and jump server before connecting.
+
+### SSH host fingerprints
+
+Enter the expected `SHA256:…` host fingerprint in the server form. Verify it through a trusted console, for example:
+
+```bash
+for key in /etc/ssh/ssh_host_*_key.pub; do
+  ssh-keygen -lf "$key"
+done
+```
+
+Connections without an enrolled fingerprint are rejected and report the observed fingerprint for comparison. **Do not trust that observation without independent verification.** Changed keys are rejected too; update the saved fingerprint only after confirming a legitimate rotation. Targets and jump hosts are checked independently.
+
+### SFTP uploads and connection limits
+
+- One direct jump host is supported; nested jump chains are rejected.
+- Upload request bodies are capped at 256 MiB, including multipart overhead. Each SFTP operation has a fifteen-minute limit.
+- Uploads write private temporary files before publishing. Replacing a regular file preserves permissions and UID/GID; metadata failures abort replacement. New files use `0600`; symlinks are not overwritten.
+- Servers without POSIX rename support accept new files only, not overwrites. Transport loss may leave `.opsup-upload-*` files; remove them only after confirming no upload is active.
+
+## Verification and maintenance
+
+```bash
+make test                     # Frontend typecheck/build/tests and Go vet/race tests
+make clean                    # Build/dependency cleanup only; preserves data and secrets
+# Destructive: stop the service and back up data first.
+make reset-data CONFIRM=DELETE DB_PATH=/absolute/path/to/opsup.db
+```
+
+GitHub Actions verifies tests, Go formatting, types, binary builds, and Docker builds.
+
+## Security boundaries
+
+- SSH private keys and passwords use AES-256-GCM storage. APIs return neither credentials nor their ciphertext. Administrator passwords use bcrypt.
+- New administrator passwords require at least 12 characters and at most 72 UTF-8 bytes. First-user creation is atomic under concurrent requests.
+- Login and setup are rate-limited by source IP. Forwarded IP headers are not trusted by default, so clients behind a reverse proxy share its quota.
+- JWTs expire after 24 hours. WebSocket authentication still uses a query parameter. Application access logs omit query strings; **configure reverse-proxy logs to redact tokens or omit full terminal request URLs too**.
+- The application is same-origin, without wildcard CORS. Use HTTPS and never expose an uninitialized installation to the public internet.
+- This remains a shared-administrator server manager, not a multi-tenant authorization system. SFTP access is limited by the remote SSH account's permissions.
 
 ## License
 

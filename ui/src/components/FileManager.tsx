@@ -1,5 +1,12 @@
 import { useEffect, useState, useRef } from 'react'
-import { Modal, Table, Button, Input, message, Upload, Space, Tooltip, Popconfirm } from 'antd'
+import Modal from 'antd/es/modal'
+import Table from 'antd/es/table'
+import Button from 'antd/es/button'
+import Input from 'antd/es/input'
+import message from 'antd/es/message'
+import Space from 'antd/es/space'
+import Tooltip from 'antd/es/tooltip'
+import Popconfirm from 'antd/es/popconfirm'
 import {
   FolderOutlined,
   FileOutlined,
@@ -10,6 +17,7 @@ import {
   ReloadOutlined,
   HomeOutlined,
 } from '@ant-design/icons'
+import { useDirectory } from '../hooks/useDirectory'
 import * as filesApi from '../api/files'
 import type { FileEntry } from '../api/files'
 import { useTheme } from '../contexts/ThemeContext'
@@ -41,41 +49,16 @@ function formatTime(t: string): string {
 
 export default function FileManager({ open, serverId, serverName, onClose }: Props) {
   const { colors } = useTheme()
-  const [files, setFiles] = useState<FileEntry[]>([])
-  const [currentPath, setCurrentPath] = useState('/')
-  const [loading, setLoading] = useState(false)
+  const { files, currentPath, loading, ready, loadFiles, capture } = useDirectory(open, serverId)
   const [pathInput, setPathInput] = useState('/')
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [uploading, setUploading] = useState(false)
+  const [page, setPage] = useState(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const loadFiles = async (dirPath: string) => {
-    setLoading(true)
-    try {
-      const res = await filesApi.listFiles(serverId, dirPath)
-      setFiles(res.data || [])
-      setCurrentPath(dirPath)
-      setPathInput(dirPath)
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '加载文件列表失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (open) {
-      loadFiles('/')
-    }
-  }, [open, serverId])
-
-  const navigateTo = (dirPath: string) => {
-    loadFiles(dirPath)
-    setSelectedRows(new Set())
-  }
+  useEffect(() => { setPathInput(currentPath); setPage(1) }, [currentPath, serverId, open])
+  const navigateTo = (path: string) => { void loadFiles(path) }
 
   const handleNavigate = (record: FileEntry) => {
-    if (record.isDir) {
+    if (ready && record.isDir && capture().isCurrent()) {
       navigateTo(record.path)
     }
   }
@@ -87,14 +70,18 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files
+    if (!ready) return
+    const target = capture()
+    if (!target.isCurrent()) return
+    const input = e.target
+    const fileList = input.files
     if (!fileList || fileList.length === 0) return
 
     setUploading(true)
     let success = 0
     for (let i = 0; i < fileList.length; i++) {
       try {
-        await filesApi.uploadFile(serverId, currentPath, fileList[i])
+        await filesApi.uploadFile(target.serverId, target.path, fileList[i])
         success++
       } catch (e: any) {
         message.error(`${fileList[i].name}: ${e.response?.data?.error || '上传失败'}`)
@@ -102,13 +89,14 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
     }
     if (success > 0) {
       message.success(`已上传 ${success} 个文件`)
-      loadFiles(currentPath)
+      target.refresh()
     }
     setUploading(false)
-    e.target.value = ''
+    input.value = ''
   }
 
   const handleDownload = async (record: FileEntry) => {
+    if (!ready || !capture().isCurrent()) return
     try {
       const res = await filesApi.downloadFile(serverId, record.path)
       const url = URL.createObjectURL(res.data)
@@ -123,16 +111,22 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
   }
 
   const handleDelete = async (record: FileEntry) => {
+    if (!ready || !files.some(file => file.path === record.path)) return
+    const target = capture()
+    if (!target.isCurrent()) return
     try {
       await filesApi.deleteFile(serverId, record.path)
       message.success('已删除')
-      loadFiles(currentPath)
+      target.refresh()
     } catch (e: any) {
       message.error(e.response?.data?.error || '删除失败')
     }
   }
 
   const handleMkdir = async () => {
+    if (!ready) return
+    const target = capture()
+    if (!target.isCurrent()) return
     const dirName = await new Promise<string | null>((resolve) => {
       let value = ''
       Modal.confirm({
@@ -152,11 +146,11 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
       })
     })
 
-    if (dirName) {
+    if (dirName && target.isCurrent()) {
       try {
-        await filesApi.createDir(serverId, currentPath === '/' ? `/${dirName}` : `${currentPath}/${dirName}`)
+        await filesApi.createDir(target.serverId, target.path === '/' ? `/${dirName}` : `${target.path}/${dirName}`)
         message.success('已创建')
-        loadFiles(currentPath)
+        target.refresh()
       } catch (e: any) {
         message.error(e.response?.data?.error || '创建失败')
       }
@@ -172,7 +166,10 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: FileEntry) => (
-        <div
+        <button
+          className="plain-button"
+          aria-label={name}
+          disabled={!ready || !record.isDir}
           onClick={() => handleNavigate(record)}
           style={{
             cursor: record.isDir ? 'pointer' : 'default',
@@ -189,7 +186,7 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
           <span style={{ color: record.isDir ? colors.colorPrimary : colors.textPrimary }}>
             {name}
           </span>
-        </div>
+        </button>
       ),
     },
     {
@@ -214,12 +211,12 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
         <Space size={4}>
           <Popconfirm title={`确定删除 ${record.name}？`} onConfirm={() => handleDelete(record)} okText="删除" cancelText="取消">
             <Tooltip title="删除">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              <Button aria-label={`删除 ${record.name}`} disabled={!ready} type="text" size="small" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
           {!record.isDir && (
             <Tooltip title="下载">
-              <Button type="text" size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(record)} />
+              <Button aria-label={`下载 ${record.name}`} disabled={!ready} type="text" size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(record)} />
             </Tooltip>
           )}
         </Space>
@@ -228,70 +225,31 @@ export default function FileManager({ open, serverId, serverName, onClose }: Pro
   ]
 
   return (
-    <Modal
-      title={`文件管理 - ${serverName}`}
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={720}
-      styles={{ body: { padding: '12px 0 0' } }}
-    >
-      {/* Path bar */}
-      <div style={{ padding: '0 16px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <Tooltip title="根目录">
-          <Button type="text" size="small" icon={<HomeOutlined />} onClick={() => navigateTo('/')} />
-        </Tooltip>
-        <Input
-          value={pathInput}
-          onChange={(e) => setPathInput(e.target.value)}
-          onPressEnter={handleGoPath}
-          style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
-        />
-        <Button size="small" icon={<ReloadOutlined />} onClick={() => loadFiles(currentPath)}>
-          刷新
-        </Button>
+    <Modal className="opsup-modal file-manager" title={`文件管理 · ${serverName}`} open={open} onCancel={onClose} footer={null} width={760}
+      styles={{ body: { maxHeight: 'calc(100dvh - 180px)', overflowY: 'auto' } }}>
+      <div className="file-toolbar">
+        <Tooltip title="根目录"><Button aria-label="根目录" type="text" size="small" icon={<HomeOutlined />} onClick={() => navigateTo('/')} /></Tooltip>
+        <Input aria-label="目录路径" value={pathInput} onChange={event => setPathInput(event.target.value)} onPressEnter={handleGoPath} style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+        <Button size="small" icon={<ReloadOutlined />} onClick={() => loadFiles(currentPath)}>刷新</Button>
       </div>
-
-      {/* Breadcrumb */}
-      <div style={{ padding: '0 16px 8px', fontSize: 12, color: colors.textTertiary, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-        <span style={{ cursor: 'pointer', color: colors.colorPrimary }} onClick={() => navigateTo('/')}>/</span>
+      <nav className="file-breadcrumbs" aria-label="当前目录" style={{ color: colors.textTertiary, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        <button className="plain-button" aria-label="根目录路径" style={{ color: colors.colorPrimary }} onClick={() => navigateTo('/')}>/</button>
         {pathParts.map((part, i) => {
           const fullPath = '/' + pathParts.slice(0, i + 1).join('/')
-          return (
-            <span key={fullPath} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <span>/</span>
-              <span style={{ cursor: 'pointer', color: colors.colorPrimary }} onClick={() => navigateTo(fullPath)}>
-                {part}
-              </span>
-            </span>
-          )
+          return <span key={fullPath} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <span>/</span>}
+            <button className="plain-button" style={{ color: colors.colorPrimary }} onClick={() => navigateTo(fullPath)}>{part}</button>
+          </span>
         })}
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: 8 }}>
-        <Button size="small" icon={<UploadOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>
-          上传
-        </Button>
-        <Button size="small" icon={<FolderAddOutlined />} onClick={handleMkdir}>
-          新建文件夹
-        </Button>
+      </nav>
+      <div className="file-actions">
+        <Button disabled={!ready} size="small" icon={<UploadOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>上传</Button>
+        <Button disabled={!ready} size="small" icon={<FolderAddOutlined />} onClick={handleMkdir}>新建文件夹</Button>
         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleUpload} />
       </div>
-
-      {/* File table */}
-      <Table
-        dataSource={files}
-        columns={columns}
-        rowKey="path"
-        loading={loading}
-        size="small"
-        pagination={false}
-        style={{ maxHeight: '50vh', overflow: 'auto' }}
-        onRow={(record) => ({
-          onDoubleClick: () => handleNavigate(record),
-        })}
-      />
+      <Table dataSource={files} columns={columns} rowKey="path" loading={loading} size="small"
+        pagination={{ current: page, pageSize: 50, showSizeChanger: false, onChange: setPage, showTotal: total => `共 ${total} 项` }}
+        scroll={{ x: 560, y: 'min(42vh, 360px)' }} onRow={record => ({ onDoubleClick: () => handleNavigate(record) })} />
     </Modal>
   )
 }

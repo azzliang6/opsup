@@ -1,237 +1,99 @@
-import { useState, useCallback } from 'react'
-import { Empty } from 'antd'
+import { useState, useCallback, lazy, Suspense, useEffect, useRef } from 'react'
+import Spin from 'antd/es/spin'
 import { CloseOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
-import TerminalTab from './TerminalTab'
-import { useTheme } from '../contexts/ThemeContext'
 import type { TabInfo } from '../pages/MainPage'
+import type { ConnectionStatus } from '../hooks/useTerminalConnection'
 
+const TerminalTab = lazy(() => import('./TerminalTab'))
 const FONT_KEY = 'opsup_font_size'
-const DEFAULT_FONT_SIZE = 14
 const MIN_SIZE = 10
 const MAX_SIZE = 28
-
-function loadFontSize(): number {
-  const saved = localStorage.getItem(FONT_KEY)
-  if (saved) {
-    const n = parseInt(saved, 10)
-    if (n >= MIN_SIZE && n <= MAX_SIZE) return n
-  }
-  return DEFAULT_FONT_SIZE
-}
-
-interface Props {
-  tabs: TabInfo[]
-  activeKey: string
-  onSelect: (key: string) => void
-  onClose: (key: string) => void
-}
+const labels = { connecting: '正在连接', connected: '已连接', error: '连接断开或失败' }
+interface Props { tabs: TabInfo[]; activeKey: string; onSelect: (key: string) => void; onClose: (key: string) => void }
 
 export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Props) {
-  const { colors } = useTheme()
-  const [fontSize, setFontSize] = useState(loadFontSize)
-
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = Number(localStorage.getItem(FONT_KEY))
+    return saved >= MIN_SIZE && saved <= MAX_SIZE ? saved : 14
+  })
+  const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({})
+  const callbacks = useRef(new Map<string, (status: ConnectionStatus) => void>())
+  useEffect(() => {
+    const keys = new Set(tabs.map(tab => tab.key))
+    for (const key of callbacks.current.keys()) if (!keys.has(key)) callbacks.current.delete(key)
+    setStatuses(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => keys.has(key))))
+  }, [tabs])
+  const statusCallback = (key: string) => {
+    if (!callbacks.current.has(key)) callbacks.current.set(key, status => setStatuses(previous => previous[key] === status ? previous : { ...previous, [key]: status }))
+    return callbacks.current.get(key)!
+  }
   const changeFontSize = useCallback((delta: number) => {
-    setFontSize((prev) => {
-      const next = Math.min(MAX_SIZE, Math.max(MIN_SIZE, prev + delta))
+    setFontSize(previous => {
+      const next = Math.min(MAX_SIZE, Math.max(MIN_SIZE, previous + delta))
       localStorage.setItem(FONT_KEY, String(next))
       return next
     })
   }, [])
-
-  if (tabs.length === 0) {
-    return (
-      <div
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <span style={{ color: colors.textTertiary }}>
-              从左侧选择一个服务器开始连接
-            </span>
-          }
-        />
-      </div>
-    )
+  const focusTab = (key: string) => { onSelect(key); document.getElementById(`tab-${key}`)?.focus() }
+  const closeTab = (key: string) => {
+    const index = tabs.findIndex(tab => tab.key === key)
+    const next = tabs[index + 1] || tabs[index - 1]
+    onClose(key)
+    if (next) focusTab(next.key)
   }
 
+  if (!tabs.length) return (
+    <section className="workspace-empty" aria-label="终端工作区">
+      <header className="empty-workspace-header"><span>终端工作区</span><span>SSH / SFTP</span></header>
+      <div className="workspace-empty-content">
+        <div className="empty-terminal-mark" aria-hidden="true">&gt;_</div>
+        <h2>开始一个终端会话</h2>
+        <p>从服务器列表选择主机，在这里开始连接。<br />切换标签时，会话会保留在原处。</p>
+        <div className="empty-features"><span>多标签终端</span><span>文件管理</span><span>快捷键支持</span></div>
+      </div>
+    </section>
+  )
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        width: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Tab bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: colors.bgTabBar,
-          borderBottom: `1px solid ${colors.borderSubtle}`,
-          padding: '0 4px',
-          height: 38,
-          minHeight: 38,
-          flexShrink: 0,
-        }}
-      >
-        {/* Tabs - scrollable */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flex: 1,
-            overflowX: 'auto',
-            gap: 0,
-          }}
-        >
-          {tabs.map((tab) => (
-            <div
-              key={tab.key}
-              onClick={() => onSelect(tab.key)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                cursor: 'pointer',
-                fontSize: 13,
-                color: tab.key === activeKey ? colors.textPrimary : colors.textSecondary,
-                background: tab.key === activeKey ? colors.bgBase : 'transparent',
-                borderRadius: '6px 6px 0 0',
-                borderBottom: tab.key === activeKey ? `2px solid ${colors.colorPrimary}` : '2px solid transparent',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.2s',
-                userSelect: 'none',
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ color: '#52c41a', fontSize: 10 }}>&bull;</span>
-              {tab.server.name}
-              <span
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClose(tab.key)
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 16,
-                  height: 16,
-                  borderRadius: 3,
-                  fontSize: 10,
-                  color: colors.textTertiary,
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLSpanElement).style.background = colors.fillMedium
-                  ;(e.currentTarget as HTMLSpanElement).style.color = colors.textPrimary
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLSpanElement).style.background = 'transparent'
-                  ;(e.currentTarget as HTMLSpanElement).style.color = colors.textTertiary
-                }}
-              >
-                <CloseOutlined style={{ fontSize: 9 }} />
-              </span>
+    <div className="terminal-workspace">
+      <div className="terminal-tab-bar">
+        <div className="terminal-tab-list" role="tablist" aria-label="SSH 终端">
+          {tabs.map((tab, index) => {
+            const status = statuses[tab.key] || 'connecting'
+            return <div className="terminal-tab-item" key={tab.key} data-active={tab.key === activeKey}>
+              <button className="plain-button terminal-tab-label" role="tab" id={`tab-${tab.key}`} aria-controls={`panel-${tab.key}`} aria-selected={tab.key === activeKey} tabIndex={tab.key === activeKey ? 0 : -1}
+                title={`${tab.server.name} · ${tab.server.username}@${tab.server.host}:${tab.server.port}`}
+                onClick={() => onSelect(tab.key)} onKeyDown={event => {
+                  let target = index
+                  if (event.key === 'ArrowRight') target = (index + 1) % tabs.length
+                  else if (event.key === 'ArrowLeft') target = (index - 1 + tabs.length) % tabs.length
+                  else if (event.key === 'Home') target = 0
+                  else if (event.key === 'End') target = tabs.length - 1
+                  else if (event.key === 'Delete') { event.preventDefault(); closeTab(tab.key); return }
+                  else return
+                  event.preventDefault()
+                  focusTab(tabs[target].key)
+                }}>
+                <span className="connection-dot" role="img" data-status={status} aria-label={labels[status]} title={labels[status]} />
+                <span className="tab-name">{tab.server.name}</span>
+              </button>
+              <button className="plain-button tab-close" aria-label={`关闭 ${tab.server.name}`} onClick={() => closeTab(tab.key)}><CloseOutlined /></button>
             </div>
-          ))}
+          })}
         </div>
-
-        {/* Font size controls */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            marginLeft: 8,
-            marginRight: 4,
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={() => changeFontSize(-1)}
-            disabled={fontSize <= MIN_SIZE}
-            style={{
-              background: colors.fillMedium,
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 4,
-              color: fontSize <= MIN_SIZE ? colors.textTertiary : colors.textSecondary,
-              width: 24,
-              height: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: fontSize <= MIN_SIZE ? 'default' : 'pointer',
-              fontSize: 11,
-            }}
-          >
-            <MinusOutlined />
-          </button>
-          <span
-            style={{
-              fontSize: 12,
-              color: colors.textSecondary,
-              minWidth: 30,
-              textAlign: 'center',
-              userSelect: 'none',
-            }}
-          >
-            {fontSize}px
-          </span>
-          <button
-            onClick={() => changeFontSize(1)}
-            disabled={fontSize >= MAX_SIZE}
-            style={{
-              background: colors.fillMedium,
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 4,
-              color: fontSize >= MAX_SIZE ? colors.textTertiary : colors.textSecondary,
-              width: 24,
-              height: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: fontSize >= MAX_SIZE ? 'default' : 'pointer',
-              fontSize: 11,
-            }}
-          >
-            <PlusOutlined />
-          </button>
+        <div className="font-controls" role="group" aria-label="终端字号">
+          <button className="plain-button" aria-label="缩小字体" disabled={fontSize <= MIN_SIZE} onClick={() => changeFontSize(-1)}><MinusOutlined /></button>
+          <span>{fontSize}px</span>
+          <button className="plain-button" aria-label="放大字体" disabled={fontSize >= MAX_SIZE} onClick={() => changeFontSize(1)}><PlusOutlined /></button>
         </div>
       </div>
-
-      {/* Terminal area */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {tabs.map((tab) => (
-          <div
-            key={tab.key}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: tab.key === activeKey ? 'block' : 'none',
-            }}
-          >
-            <TerminalTab
-              serverId={tab.server.id}
-              serverName={tab.server.name}
-              isActive={tab.key === activeKey}
-              fontSize={fontSize}
-            />
-          </div>
-        ))}
-      </div>
+      <div className="terminal-panels">{tabs.map(tab => (
+        <div className="terminal-panel" key={tab.key} role="tabpanel" id={`panel-${tab.key}`} aria-labelledby={`tab-${tab.key}`} hidden={tab.key !== activeKey}>
+          <Suspense fallback={<div className="panel-loading" role="status"><Spin size="small" />加载终端…</div>}>
+            <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />
+          </Suspense>
+        </div>
+      ))}</div>
     </div>
   )
 }
