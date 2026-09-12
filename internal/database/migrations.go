@@ -57,6 +57,14 @@ var migrations = []func(*sql.Tx) error{
 	func(tx *sql.Tx) error {
 		return addServerColumn(tx, "host_key", "TEXT NOT NULL DEFAULT ''")
 	},
+	func(tx *sql.Tx) error {
+		for _, c := range []struct{ name, definition string }{{"protocol", "TEXT NOT NULL DEFAULT 'ssh'"}, {"rdp_domain", "TEXT NOT NULL DEFAULT ''"}, {"rdp_cert_fingerprint", "TEXT NOT NULL DEFAULT ''"}} {
+			if err := addServerColumn(tx, c.name, c.definition); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
 }
 
 func migrate(db *sql.DB) error {

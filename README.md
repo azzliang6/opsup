@@ -225,3 +225,7 @@ GitHub Actions verifies tests, Go formatting, types, binary builds, and Docker b
 ## License
 
 [MIT](LICENSE)
+
+## RDP remote desktop (V1)
+
+IronRDP WASM adds NLA remote desktop sessions, keyboard/mouse input, fullscreen, dynamic resize and manual clipboard transfer while retaining single-binary deployment. Passwords are entered per connection and are never saved. See the [RDP setup and validation guide](docs/rdp.md) for certificate configuration and compatibility limits.

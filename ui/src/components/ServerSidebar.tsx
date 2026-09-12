@@ -71,7 +71,7 @@ export default function ServerSidebar({ onConnect, activeServerId }: Props) {
     { key: 'test', label: '测试连接', icon: <CheckCircleOutlined />, onClick: () => handleTest(server) },
     { key: 'edit', label: '编辑', icon: <EditOutlined />, onClick: () => handleEdit(server) },
     { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, onClick: () => handleDelete(server) },
-  ] })
+  ].filter(item => server.protocol !== 'rdp' || (item.key !== 'files' && item.key !== 'test')) })
 
   const query = search.toLowerCase()
   const filtered = servers.filter(server => !query || [server.name, server.host, server.group || ''].some(value => value.toLowerCase().includes(query)))
@@ -109,12 +109,12 @@ export default function ServerSidebar({ onConnect, activeServerId }: Props) {
                   <button className="plain-button server-connect" aria-label={`连接 ${server.name}`} aria-current={activeServerId === server.id ? 'true' : undefined} onClick={() => onCardClick(server)}>
                     <span className="server-icon"><DesktopOutlined /></span>
                     <span className="server-copy">
-                      <span className="server-name" title={server.name}>{server.name}</span>
+                      <span className="server-name" title={server.name}>{server.name}{server.protocol === 'rdp' && ' · RDP'}</span>
                       <span className="server-address" title={`${server.username}@${server.host}:${server.port}${server.jump_server_id ? ' · 经跳板机' : ''}`}>{server.username}@{server.host}:{server.port}{server.jump_server_id && ' · 跳板'}</span>
                     </span>
                   </button>
                   <div className="server-actions">
-                    <Button size="small" type="text" aria-label={`文件管理 ${server.name}`} title="文件管理" icon={<FolderOpenOutlined />} onClick={() => setFileManagerServer(server)} />
+                    {server.protocol !== 'rdp' && <Button size="small" type="text" aria-label={`文件管理 ${server.name}`} title="文件管理" icon={<FolderOpenOutlined />} onClick={() => setFileManagerServer(server)} />}
                     <Dropdown trigger={['click']} menu={menuFor(server)}><Button size="small" type="text" aria-label={`服务器操作 ${server.name}`} title="服务器操作" icon={<MoreOutlined />} /></Dropdown>
                   </div>
                 </div>

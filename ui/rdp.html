@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpsUp RDP</title></head>
+<body>
+  <header><strong id="name">RDP 远程桌面</strong><span id="status" role="status">正在加载客户端…</span></header>
+  <form id="login">
+    <label>用户名<input id="username" autocomplete="username" required></label>
+    <label>域（可选）<input id="domain" autocomplete="off"></label>
+    <label>密码<input id="password" type="password" autocomplete="off" required></label>
+    <p>密码仅用于本次连接，不保存。需通过 HTTPS 使用远程桌面。</p>
+    <button id="connect" disabled>连接</button>
+    <button id="cancel" type="button" hidden>取消连接</button>
+  </form>
+  <nav id="tools" hidden>
+    <button id="disconnect">断开</button><button id="fullscreen">全屏</button><button id="cad">Ctrl+Alt+Del</button>
+    <button id="paste">发送剪贴板</button><button id="copy">读取远程剪贴板</button>
+  </nav>
+  <main id="desktop"></main>
+  <script type="module" src="/src/rdp/client.ts"></script>
+</body></html>

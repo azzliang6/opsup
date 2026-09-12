@@ -38,6 +38,9 @@ func SetupRouter(cfg AppConfig) *gin.Engine {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("X-Frame-Options", "DENY")
+		if c.Request.URL.Path == "/rdp.html" {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+		}
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.Header("Cache-Control", "no-store")
 			if !strings.HasSuffix(c.Request.URL.Path, "/files/upload") {
@@ -70,6 +73,7 @@ func SetupRouter(cfg AppConfig) *gin.Engine {
 		files.POST("/mkdir", SFTPMkdir(cfg.EncryptionKey))
 		files.DELETE("", SFTPDelete(cfg.EncryptionKey))
 		api.GET("/terminal/:serverId", TerminalHandler(cfg))
+		api.GET("/rdp/:serverId", RDPHandler(cfg))
 	}
 
 	distFS, err := fs.Sub(cfg.DistFS, "ui/dist")

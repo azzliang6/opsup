@@ -1,5 +1,8 @@
 export interface Server {
   id: number
+  protocol?: 'ssh' | 'rdp'
+  rdp_domain?: string
+  rdp_cert_fingerprint?: string
   name: string
   host_key: string
   host: string
@@ -14,6 +17,9 @@ export interface Server {
 }
 
 export interface ServerForm {
+  protocol?: 'ssh' | 'rdp'
+  rdp_domain?: string
+  rdp_cert_fingerprint?: string
   name: string
   host_key: string
   host: string

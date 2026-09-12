@@ -15,8 +15,8 @@ import (
 func loadConnectionServer(ctx context.Context, db *sql.DB, id int64) (*models.Server, error) {
 	var server models.Server
 	err := db.QueryRowContext(ctx,
-		`SELECT id, host, port, username, auth_type, host_key, private_key, password, jump_server_id FROM servers WHERE id = ?`, id,
-	).Scan(&server.ID, &server.Host, &server.Port, &server.Username, &server.AuthType, &server.HostKey, &server.PrivateKey, &server.Password, &server.JumpServerID)
+		`SELECT id, host, port, username, auth_type, host_key, private_key, password, jump_server_id, protocol FROM servers WHERE id = ?`, id,
+	).Scan(&server.ID, &server.Host, &server.Port, &server.Username, &server.AuthType, &server.HostKey, &server.PrivateKey, &server.Password, &server.JumpServerID, &server.Protocol)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -27,6 +27,9 @@ func loadConnectionServer(ctx context.Context, db *sql.DB, id int64) (*models.Se
 }
 
 func connectionConfig(server *models.Server, encKey string) (sshclient.Config, error) {
+	if server.Protocol == "rdp" {
+		return sshclient.Config{}, fmt.Errorf("RDP servers do not support SSH or SFTP")
+	}
 	cfg := sshclient.Config{Host: server.Host, Port: server.Port, Username: server.Username, AuthType: server.AuthType, HostKey: server.HostKey}
 	var err error
 	if server.PrivateKey != "" {
