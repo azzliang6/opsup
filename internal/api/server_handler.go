@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +15,10 @@ import (
 )
 
 type serverCreateReq struct {
+	Protocol           string `json:"protocol"`
+	RDPDomain          string `json:"rdp_domain"`
+	RDPCertFingerprint string `json:"rdp_cert_fingerprint"`
+
 	Name         string `json:"name" binding:"required"`
 	Host         string `json:"host" binding:"required"`
 	Port         int    `json:"port"`
@@ -29,12 +34,36 @@ type serverCreateReq struct {
 }
 
 func (r *serverCreateReq) validate() error {
+	if r.Protocol == "" {
+		r.Protocol = "ssh"
+	}
+	if r.Protocol != "ssh" && r.Protocol != "rdp" {
+		return fmt.Errorf("protocol must be ssh or rdp")
+	}
+	if r.Protocol == "rdp" && r.Port == 0 {
+		r.Port = 3389
+	}
 	if r.Port == 0 {
 		r.Port = 22
 	}
 	if r.Port < 1 || r.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535")
 	}
+	if r.Protocol == "rdp" {
+		if r.Password != "" || r.PrivateKey != "" || r.CopyKeyFrom != 0 || r.HostKey != "" || r.JumpServerID != nil {
+			return fmt.Errorf("RDP V1 does not store credentials or support SSH settings")
+		}
+		r.AuthType = "password"
+		r.RDPCertFingerprint = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(r.RDPCertFingerprint), ":", ""))
+		if r.RDPCertFingerprint != "" {
+			b, err := hex.DecodeString(r.RDPCertFingerprint)
+			if err != nil || len(b) != 32 {
+				return fmt.Errorf("RDP certificate fingerprint must be SHA256 (64 hex digits)")
+			}
+		}
+		return nil
+	}
+	r.RDPDomain, r.RDPCertFingerprint = "", ""
 	if r.AuthType == "" {
 		r.AuthType = "key"
 	}
@@ -86,6 +115,9 @@ func GetServer(c *gin.Context) {
 }
 
 func resolveCredentials(db *sql.DB, req *serverCreateReq, current *models.Server, key string) (string, string, error) {
+	if req.Protocol == "rdp" {
+		return "", "", nil
+	}
 	privateKey, password := "", ""
 	if current != nil {
 		privateKey, password = current.PrivateKey, current.Password
@@ -162,7 +194,7 @@ func saveServer(encKey string, update bool) gin.HandlerFunc {
 				return
 			}
 			jump, err := models.GetServer(getDB(c), *req.JumpServerID)
-			if err != nil || jump == nil {
+			if err != nil || jump == nil || jump.Protocol == "rdp" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "jump server not found"})
 				return
 			}
@@ -173,6 +205,7 @@ func saveServer(encKey string, update bool) gin.HandlerFunc {
 			return
 		}
 		server := &models.Server{
+			Protocol: req.Protocol, RDPDomain: req.RDPDomain, RDPCertFingerprint: req.RDPCertFingerprint,
 			ID: id, Name: req.Name, Host: req.Host, Port: req.Port,
 			Username: req.Username, AuthType: req.AuthType, HostKey: req.HostKey,
 			PrivateKey: privateKey, Password: password, Description: req.Description,
@@ -212,6 +245,10 @@ func TestConnection(encKey string) gin.HandlerFunc {
 		server, err := models.GetServer(getDB(c), id)
 		if err != nil || server == nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+			return
+		}
+		if server.Protocol == "rdp" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Open the RDP tab to test authentication"})
 			return
 		}
 		client, err := dialServer(c.Request.Context(), getDB(c), server, encKey)

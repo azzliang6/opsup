@@ -40,3 +40,16 @@ it('validates the exact backend fingerprint format', () => {
   expect(HOST_KEY_PATTERN.test(`SHA256:${'+/'.repeat(21)}a`)).toBe(true)
   for (const value of ['SHA256:abc', `${fingerprint}=`, fingerprint.toLowerCase(), `SHA256:${'a'.repeat(44)}`, `SHA256:${'_'.repeat(43)}`]) expect(HOST_KEY_PATTERN.test(value)).toBe(false)
 })
+
+it('switches to RDP without sending saved SSH credentials or settings', async () => {
+  form()
+  fireEvent.click(screen.getByRole('radio', { name: 'RDP' }))
+  expect(screen.getByLabelText('端口')).toHaveValue('3389')
+  expect(screen.queryByLabelText('SSH 主机密钥指纹')).not.toBeInTheDocument()
+  expect(screen.queryByPlaceholderText('SSH 登录密码')).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('域（可选）'), { target: { value: 'EXAMPLE' } })
+  fireEvent.click(screen.getByRole('button', { name: '更 新' }))
+  await waitFor(() => expect(serverApi.updateServer).toHaveBeenCalledWith(1, expect.objectContaining({
+    protocol: 'rdp', port: 3389, rdp_domain: 'EXAMPLE', password: '', private_key: '', host_key: '', copy_key_from: 0, jump_server_id: null,
+  })))
+})

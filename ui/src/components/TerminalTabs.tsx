@@ -4,6 +4,7 @@ import { CloseOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TabInfo } from '../pages/MainPage'
 import type { ConnectionStatus } from '../hooks/useTerminalConnection'
 
+const RdpTab = lazy(() => import('./RdpTab'))
 const TerminalTab = lazy(() => import('./TerminalTab'))
 const FONT_KEY = 'opsup_font_size'
 const MIN_SIZE = 10
@@ -44,7 +45,7 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
 
   if (!tabs.length) return (
     <section className="workspace-empty" aria-label="终端工作区">
-      <header className="empty-workspace-header"><span>终端工作区</span><span>SSH / SFTP</span></header>
+      <header className="empty-workspace-header"><span>终端工作区</span><span>SSH / SFTP / RDP</span></header>
       <div className="workspace-empty-content">
         <div className="empty-terminal-mark" aria-hidden="true">&gt;_</div>
         <h2>开始一个终端会话</h2>
@@ -57,7 +58,7 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
   return (
     <div className="terminal-workspace">
       <div className="terminal-tab-bar">
-        <div className="terminal-tab-list" role="tablist" aria-label="SSH 终端">
+        <div className="terminal-tab-list" role="tablist" aria-label="远程会话">
           {tabs.map((tab, index) => {
             const status = statuses[tab.key] || 'connecting'
             return <div className="terminal-tab-item" key={tab.key} data-active={tab.key === activeKey}>
@@ -81,7 +82,7 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
             </div>
           })}
         </div>
-        <div className="font-controls" role="group" aria-label="终端字号">
+        <div style={{ display: tabs.find(tab => tab.key === activeKey)?.server.protocol === 'rdp' ? 'none' : undefined }} className="font-controls" role="group" aria-label="终端字号">
           <button className="plain-button" aria-label="缩小字体" disabled={fontSize <= MIN_SIZE} onClick={() => changeFontSize(-1)}><MinusOutlined /></button>
           <span>{fontSize}px</span>
           <button className="plain-button" aria-label="放大字体" disabled={fontSize >= MAX_SIZE} onClick={() => changeFontSize(1)}><PlusOutlined /></button>
@@ -90,7 +91,7 @@ export default function TerminalTabs({ tabs, activeKey, onSelect, onClose }: Pro
       <div className="terminal-panels">{tabs.map(tab => (
         <div className="terminal-panel" key={tab.key} role="tabpanel" id={`panel-${tab.key}`} aria-labelledby={`tab-${tab.key}`} hidden={tab.key !== activeKey}>
           <Suspense fallback={<div className="panel-loading" role="status"><Spin size="small" />加载终端…</div>}>
-            <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />
+            {tab.server.protocol === 'rdp' ? <RdpTab server={tab.server} isActive={tab.key === activeKey} onStatusChange={statusCallback(tab.key)} /> : <TerminalTab serverId={tab.server.id} serverName={tab.server.name} isActive={tab.key === activeKey} fontSize={fontSize} onStatusChange={statusCallback(tab.key)} />}
           </Suspense>
         </div>
       ))}</div>

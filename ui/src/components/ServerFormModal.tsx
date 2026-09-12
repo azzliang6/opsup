@@ -28,6 +28,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
   const [form] = Form.useForm<ServerForm>()
   const [loading, setLoading] = useState(false)
   const { colors } = useTheme()
+  const [protocol, setProtocol] = useState<'ssh' | 'rdp'>('ssh')
   const [authType, setAuthType] = useState<AuthType>('key')
   const [keySource, setKeySource] = useState<KeySource>('new')
   const [existingServers, setExistingServers] = useState<Server[]>([])
@@ -61,8 +62,12 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
     if (open) {
       serverApi.listServers().then((list) => { if (active) setExistingServers(list || []) }).catch(() => { if (active) message.error('加载服务器列表失败') })
 
+      setProtocol(server?.protocol || 'ssh')
       if (server) {
         form.setFieldsValue({
+          protocol: server.protocol || 'ssh',
+          rdp_domain: server.rdp_domain || '',
+          rdp_cert_fingerprint: server.rdp_cert_fingerprint || '',
           name: server.name,
           host: server.host,
           host_key: server.host_key || '',
@@ -100,7 +105,14 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
       values.auth_type = authType
       values.host_key = (values.host_key || '').trim()
 
-      if (authType === 'password') {
+      values.protocol = protocol
+      if (protocol === 'rdp') {
+        values.auth_type = 'password'
+        values.password = ''
+        values.private_key = ''
+        values.copy_key_from = 0
+        values.host_key = ''
+      } else if (authType === 'password') {
         values.private_key = ''
         values.copy_key_from = 0
         if (!isEdit && !values.password) {
@@ -123,7 +135,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
         }
       }
 
-      values.jump_server_id = jumpServerId
+      values.jump_server_id = protocol === 'rdp' ? null : jumpServerId
 
       setLoading(true)
       if (isEdit) {
@@ -143,7 +155,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
     }
   }
 
-  const reuseOptions = existingServers.filter((s) => !server || s.id !== server.id)
+  const reuseOptions = existingServers.filter((s) => s.protocol !== 'rdp' && (!server || s.id !== server.id))
 
   return (
     <Modal
@@ -159,6 +171,7 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
       styles={{ body: { maxHeight: 'min(60vh, calc(100dvh - 200px))', overflowY: 'auto', paddingRight: 4 } }}
     >
       <Form form={form} layout="vertical">
+        <Form.Item label="连接类型"><Radio.Group value={protocol} onChange={e => { setProtocol(e.target.value); form.setFieldValue('port', e.target.value === 'rdp' ? 3389 : 22) }} options={[{value: 'ssh', label: 'SSH'}, {value: 'rdp', label: 'RDP'}]} /></Form.Item>
         <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
           <Input placeholder="如: 生产环境 Web 服务器" />
         </Form.Item>
@@ -180,11 +193,16 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
         <Form.Item
           name="username"
           label="用户名"
-          rules={[{ required: true, message: '请输入SSH用户名' }]}
+          rules={[{ required: true, message: '请输入用户名' }]}
         >
-          <Input placeholder="root" />
+          <Input placeholder={protocol === 'rdp' ? 'Administrator' : 'root'} />
         </Form.Item>
 
+        {protocol === 'rdp' ? <>
+          <Form.Item name="rdp_domain" label="域（可选）"><Input autoComplete="off" /></Form.Item>
+          <Form.Item name="rdp_cert_fingerprint" label="RDP 证书 SHA256 指纹" rules={[{ pattern: /^(?:[a-fA-F0-9]{64}|(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2})$/, message: '请输入 64 位十六进制 SHA256 指纹' }]} extra="使用受信任 CA 证书可留空；自签名证书需从可信 Windows 控制台核对指纹。"><Input autoComplete="off" /></Form.Item>
+          <p>密码在每次连接时输入，不保存。第一版仅支持直连。</p>
+        </> : <>
         <Form.Item
           name="host_key"
           label="SSH 主机密钥指纹"
@@ -306,6 +324,8 @@ export default function ServerFormModal({ open, server, onOk, onCancel }: Props)
             }))}
           />
         </Form.Item>
+
+        </>}
 
         <Form.Item name="description" label="描述">
           <Input.TextArea rows={2} placeholder="可选描述信息" />

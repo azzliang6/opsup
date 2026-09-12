@@ -14,6 +14,11 @@ func Init(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("database path: %w", err)
 	}
+	// A Windows drive path must become file:///C:/..., not a URI authority.
+	absolute = filepath.ToSlash(absolute)
+	if len(absolute) >= 2 && absolute[1] == ':' {
+		absolute = "/" + absolute
+	}
 	dsn := (&url.URL{Scheme: "file", Path: absolute}).String()
 	db, err := sql.Open("sqlite3", dsn+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000&_txlock=immediate")
 	if err != nil {

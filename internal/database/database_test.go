@@ -31,17 +31,17 @@ func TestAdoptLegacySchemaAndReopen(t *testing.T) {
 			t.Fatal(err)
 		}
 		var version int
-		var name, password, fingerprint string
+		var name, password, fingerprint, protocol string
 		if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 			t.Fatal(err)
 		}
 		if version != len(migrations) {
 			t.Fatalf("schema version: %d", version)
 		}
-		if err := db.QueryRow("SELECT name,password,host_key FROM servers").Scan(&name, &password, &fingerprint); err != nil {
+		if err := db.QueryRow("SELECT name,password,host_key,protocol FROM servers").Scan(&name, &password, &fingerprint, &protocol); err != nil {
 			t.Fatal(err)
 		}
-		if name != "old" || password != "" || fingerprint != "" {
+		if name != "old" || password != "" || fingerprint != "" || protocol != "ssh" {
 			t.Fatal("legacy data changed")
 		}
 		db.Close()

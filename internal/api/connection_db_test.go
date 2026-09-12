@@ -20,7 +20,7 @@ func connectionTestDB(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	_, err = db.Exec(`CREATE TABLE servers (id INTEGER PRIMARY KEY, host TEXT NOT NULL DEFAULT '127.0.0.1', port INTEGER NOT NULL DEFAULT 22, username TEXT NOT NULL DEFAULT 'test', auth_type TEXT NOT NULL DEFAULT 'password', host_key TEXT NOT NULL DEFAULT '', private_key TEXT NOT NULL DEFAULT '', password TEXT NOT NULL DEFAULT '', jump_server_id INTEGER)`)
+	_, err = db.Exec(`CREATE TABLE servers (id INTEGER PRIMARY KEY, host TEXT NOT NULL DEFAULT '127.0.0.1', port INTEGER NOT NULL DEFAULT 22, username TEXT NOT NULL DEFAULT 'test', auth_type TEXT NOT NULL DEFAULT 'password', host_key TEXT NOT NULL DEFAULT '', private_key TEXT NOT NULL DEFAULT '', password TEXT NOT NULL DEFAULT '', jump_server_id INTEGER, protocol TEXT NOT NULL DEFAULT 'ssh')`)
 	if err != nil {
 		t.Fatal(err)
 	}

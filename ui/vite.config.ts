@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   build: {
+    rollupOptions: { input: ['index.html', 'rdp.html'] },
     outDir: 'dist',
   },
   server: {
